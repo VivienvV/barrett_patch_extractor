@@ -40,14 +40,18 @@ class WSI2Biopsy():
         """Function to extract N biopsies and masks from TIFF file with its corresponding XML file with annotations. 
 
         Parameters:
-        files_path (str): String with path to tiff and xml files containing N biopsies for one WSI
-        magnification (int): Integer at which magnification to the biopsies. Default is 20x
+        root_dir (str): String with path to root directory of datasets.
+        dataset (str): String with dataset name to extract files from.
+        WSI_name (str): String with path to tiff and xml files containing N biopsies for one WSI.
+        out_dir (str): String with path to save biopsies and masks.
+        annotation_classes (list): List of annotation groups to extract in XML files.
+        magnification (int): Integer at which magnification to the biopsies. Options are: [40, 20, 10, 5, ...].
         extract_stroma (bool): If set to True, stroma regions will be separated from background regions and receive their own label. If set to False, stroma and background regions will be combined into one label.
         mask_exclude (bool): If set to True, regions annotated with “Exclude” will be masked in the resulting images.
+        verbatim (bool): If set to True, prints with progress updates will be made.
 
         Returns:
-        biopsies (list): List of N biopsies
-        masks (list): List of N masks
+        
         """
 
         self.out_dir = out_dir
@@ -82,6 +86,14 @@ class WSI2Biopsy():
             self._mask_exclude()
 
     def get_biopsy_boundaries(self):
+        """
+        Function to create folders for biopsy. Also collects biopsy boundaries from XML file and stores them
+        in a dictionary
+
+        Returns:
+        biopsy_boundaries (dict): Dictionary with biopsy_path as key and dictionary as value with top_left, 
+        location (in level 0) and size (calculated for self.level)
+        """
         biopsy_boundaries = {}
 
         for biopsy in self.get_elements_in_group("Biopsy-Outlines"):
@@ -103,7 +115,16 @@ class WSI2Biopsy():
         return biopsy_boundaries
 
     def get_polygons(self, annotation_classes):
-        """Structure of polygons"""
+        """
+        Function to collect all polygons from annotations in XML file
+        
+        Parameters:
+        annotation_classes (list): List of strings of annotation classes in the XML file
+
+        Returns:
+        polygons (dict): Dictionary with list of polygons for each annotation class with
+        structure: {annotation_class : polygons_list[polygon1[[x1, y1], [x2, y2]...], ..., polygonN[[x1, y1], [x2, y2]...]]}
+        """
 
         polygons = {annotation_class : [self.get_coords(polygon_group) for polygon_group in self.get_elements_in_group(annotation_class)] 
                                                                         for annotation_class in annotation_classes}
@@ -114,7 +135,10 @@ class WSI2Biopsy():
         return polygons
 
     def generate_biopsies(self):
-        """Biopsies"""
+        """
+        Function to extract and save all biopsies from self.biopsy_boundaries at certain zoom level. Each biopsy
+        is saved as biopsy.png in its subfolder of WSI_name.
+        """
         for biopsy_path, biopsy_dict in self.biopsy_boundaries.items():
             if self.verbatim: print(f"Extracting biopsy {biopsy_path}")
             location, size = biopsy_dict['location'], biopsy_dict['size']
@@ -123,6 +147,15 @@ class WSI2Biopsy():
 
 
     def generate_exclude(self, biopsy_path, biopsy_dict):
+        """
+        Function to create and save binary mask for Exclude regions. Each mask
+        is saved as exclude.png in its subfolder of WSI_name.
+
+        Parameters:
+        biopsy_path (str): Path to subfolder of WSI_name corresponding to biopsy
+        biopsy_dict (dict): Dictionary with information on biopsy location and size.
+        """
+        # TODO use size 0 for correct scale.
         top_left, size = biopsy_dict['top_left'], biopsy_dict['size']
         polygons = self.polygons["Exclude"]
 
@@ -131,18 +164,48 @@ class WSI2Biopsy():
             print("drawing polyon", polygon)
             # ImageDraw.Draw(exclude).polygon(polygon, fill=1, outline=1)
 
-    def generate_mask(self):
+    def generate_mask(self, biopsy_path, biopsy_dict, label_map):
+        """
+        Function to create and save 8bit mask for annotation regions. Each mask
+        is saved as mask.png in its subfolder of WSI_name.
+
+        Parameters:
+        biopsy_path (str): Path to subfolder of WSI_name corresponding to biopsy
+        biopsy_dict (dict): Dictionary with information on biopsy location and size.
+        label_map (dict): Dictionary which maps each annotation class to a label
+        """
         raise NotImplementedError
     
 
     def _mask_exclude(self):
+        """
+        Function to mask out regions of biopsy.png using corresponding exclude.png
+        """
         raise NotImplementedError
 
-    # ================== HELPER FUNCTIONS ================================
+    # ======================== HELPER FUNCTIONS ================================
     def magnification2level(self, magnification):
+        """
+        Function to get level from specified magnifications
+
+        Parameters:
+        magnification (int): Zoom level to use in TIFF file
+
+        Returns:
+        level (int): Level to extract in TIFF file to get correct zoom
+        """
         return MAGN2LEVEL[magnification]
 
     def create_biopsy_dir(self, biopsy):
+        """
+        Function to create subfolder for a biopsy in TIFF file using XML element
+
+        Parameters:
+        biopsy (element): XML element of biopsy annotation.
+
+        Returns:
+        biopsy_path (str): Path to subfolder for biopsy 
+        """
         index = biopsy.attrib["Name"].rfind(" ")
         roi_id = int(biopsy.attrib["Name"][index:])
         biopsy_path = os.path.join(*[self.biopsy_out_dir, f"{self.WSI_name}-{roi_id}"])
@@ -150,9 +213,27 @@ class WSI2Biopsy():
         return biopsy_path
 
     def get_elements_in_group(self, group):
+        """
+        Function to get all elements of certain group of annotations in the XML tree.
+
+        Parameters:
+        group (str): String of PartOfGroup group to extract all elements
+
+        Returns:
+        All "Annotation" elements that are part of specified group
+        """
         return self.XML.findall(f".//Annotation/.[@PartOfGroup='{group}']")
 
     def get_coords(self, element):
+        """
+        Function to get coordinates of polygon for certain element.
+
+        Parameters:
+        element (element): Annotation element with coordinates for polygon inside.
+
+        Returns:
+        coords (array): Array with polygon coordinates for element array[[int(x1), int(y1)], ... [int(xN), int(yN)]]
+        """
         coords = np.array([[int(re.split(',|\.', coordinates.attrib['X'])[0]), int(re.split(",|\.", coordinates.attrib['Y'])[0])]
                                     for coordinates in element.iter('Coordinate')])
 
