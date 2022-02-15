@@ -5,20 +5,48 @@ import re
 from pathlib import Path
 
 import numpy as np
+import numpy.ma as ma
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
 from PIL import Image, ImageDraw
+Image.MAX_IMAGE_PIXELS = None # Change max pixel setting to allow to open big images
+
+from scipy import ndimage as ndi
+from skimage import exposure
 
 import xml.etree.ElementTree as ET
 import openslide
 
 # %%
-ANNOTATION_CLASSES = ["Biopsy-Outlines", "Squamous-T", "NDBE-G", "NDBE-T",
-                    "LGD-G", "LGD-T", "HGD-G", "HGD-T", "Exclude"]
 
-MAGN2LEVEL = {  40 : 0,
-                20 : 1,
-                10 : 2,
-                5 : 3,
+ANNOTATION_CLASSES_DICT = {"Special"  : ["Biopsy-Outlines", "E-Stroma", "Exclude"], 
+                            "G-level" : ["NDBE-G", "LGD-G", "HGD-G"],
+                            "T-level" : ["Squamous-T", "NDBE-T", "LGD-T", "HGD-T"] }
+
+ANN2LABEL = {"Biopsy-Outlines"  : 0,
+            "E-Stroma"          : 1,
+            "Squamous-T"        : 2, 
+            "NDBE-G"            : 3, 
+            "NDBE-T"            : 3,
+            "LGD-G"             : 4, 
+            "LGD-T"             : 4, 
+            "HGD-G"             : 5, 
+            "HGD-T"             : 5,
+}
+
+LABEL2ANN = {0  : "Background",
+            1   : "E-Stroma",
+            2   : "Squamous-T",
+            3   : "NDBE",
+            4   : "LGD",
+            5   : "HGD"
+}
+
+MAGN2LEVEL = {  40  : 0,
+                20  : 1,
+                10  : 2,
+                5   : 3,
                 # 2.5 : 4,
                 # 1.25 : 5,
                 # 0.625 : 6,
@@ -32,11 +60,12 @@ class WSI2Biopsy():
                 dataset, 
                 WSI_name,
                 out_dir,
-                annotation_classes=ANNOTATION_CLASSES,
+                annotation_classes_dict=ANNOTATION_CLASSES_DICT,
+                label_map=ANN2LABEL,
                 magnification=20,
                 extract_stroma=False, 
                 mask_exclude=False,
-                verbatim=True):
+                verbose=True):
         """Function to extract N biopsies and masks from TIFF file with its corresponding XML file with annotations. 
 
         Parameters:
@@ -44,24 +73,25 @@ class WSI2Biopsy():
         dataset (str): String with dataset name to extract files from.
         WSI_name (str): String with path to tiff and xml files containing N biopsies for one WSI.
         out_dir (str): String with path to save biopsies and masks.
-        annotation_classes (list): List of annotation groups to extract in XML files.
+        annotation_classes_dict (dict): Dictionary of annotation groups based level of annotation to extract in XML files.
+        label_map (dict): Dictionary with label corresponding to annotation group.
         magnification (int): Integer at which magnification to the biopsies. Options are: [40, 20, 10, 5, ...].
-        extract_stroma (bool): If set to True, stroma regions will be separated from background regions and receive their own label. If set to False, stroma and background regions will be combined into one label.
+        extract_stroma (bool): If set to True, stroma regions will be separated from background regions and be combined with E-Stroma class. If set to False, stroma and background regions will be combined into one label.
         mask_exclude (bool): If set to True, regions annotated with “Exclude” will be masked in the resulting images.
-        verbatim (bool): If set to True, prints with progress updates will be made.
-
-        Returns:
-        
+        verbose (bool): If set to True, prints with progress updates will be made.
         """
 
         self.out_dir = out_dir
         self.dataset = dataset
         self.WSI_name = WSI_name
 
+        self.annotation_classes_dict = annotation_classes_dict
+        self.label_map = label_map
+
         self.level = self.magnification2level(magnification)
         self.extract_stroma = extract_stroma
         self.mask_exclude = mask_exclude
-        self.verbatim = verbatim
+        self.verbose = verbose
 
         # Create output dir with all needed subfolders
         self.biopsy_out_dir = os.path.join(*[out_dir, dataset, WSI_name])
@@ -71,122 +101,235 @@ class WSI2Biopsy():
         self.TIFF = openslide.OpenSlide(os.path.join(*[root_dir, dataset, WSI_name]) + '.tiff')
         self.XML = ET.parse(os.path.join(*[root_dir, dataset, WSI_name]) +'.xml').getroot()
         
-        # Create dictionaries for biopsy boundaries and extract biopsies
-        self.biopsy_boundaries = self.get_biopsy_boundaries()
-        self.generate_biopsies()
-        self.TIFF.close()
-
         # Create dictionaries for polygons (values) for each class (key)
-        self.polygons = self.get_polygons(annotation_classes)
-        for biopsy_path, biopsy_dict in self.biopsy_boundaries.items():
-            self.generate_exclude(biopsy_path, biopsy_dict)
-            self.generate_mask(biopsy_path, biopsy_dict)
+        self.polygons = self.get_polygons(annotation_classes_dict)
+        if self.verbose:
+            print(f"Annotation polygons found for {self.WSI_name} in {self.dataset} dataset")
+            for ann_level, ann_groups in self.polygons.items():
+                print(f"\t{ann_level} annotations in WSI:")
+                for ann_group, polys in ann_groups.items():
+                    print(f"\t\tFor {ann_group} found {len(polys)} annotations.")
+            print("")
 
-        if mask_exclude:
-            self._mask_exclude()
+        # Create dictionaries for biopsy boundaries and extract biopsies
+        self.biopsy_dict = self.get_biopsy_dict()
 
-    def get_biopsy_boundaries(self):
-        """
-        Function to create folders for biopsy. Also collects biopsy boundaries from XML file and stores them
+        # Create for every biopsy a biopsy.png, exclude.png and mask.png
+        for biopsy_path in self.biopsy_dict.keys():
+            if self.verbose: print(f"Extracting biopsy {biopsy_path}\n\tGenerating biopsy...")
+            self.generate_biopsy(biopsy_path)
+            if self.verbose: print("\tGenerating mask...")
+            self.generate_mask(biopsy_path)
+
+            if self.verbose: print("\tGenerating exclude...")
+            self.generate_exclude(biopsy_path)
+
+            if mask_exclude:
+                self._mask_exclude(biopsy_path)
+
+            if self.verbose: self.plot_biopsy(biopsy_path)
+
+    def get_biopsy_dict(self):
+        """Function to create folders for biopsy. Also collects biopsy boundaries from XML file and stores them
         in a dictionary
 
         Returns:
-        biopsy_boundaries (dict): Dictionary with biopsy_path as key and dictionary as value with top_left, 
-        location (in level 0) and size (calculated for self.level)
+        biopsy_dict (dict): Dictionary with biopsy_path as key and dictionary as value with top_left, bottom_right
+        location (in level 0) and sizes (calculated for self.level and on level 0) for every biopsy
         """
-        biopsy_boundaries = {}
+        biopsy_dict = {}
 
         for biopsy in self.get_elements_in_group("Biopsy-Outlines"):
             biopsy_path = self.create_biopsy_dir(biopsy)
             biopsy_coords = self.get_coords(biopsy)
 
+            # Location = top_left: (x, y) tuple giving the top left pixel in the level 0 reference frame
             top_left = np.amin(biopsy_coords, axis=0)
             bottom_right = np.amax(biopsy_coords, axis=0)
-            
-            # Location: (x, y) tuple giving the top left pixel in the level 0 reference frame
-            location = tuple(top_left)
 
             # Size: (width, height) tuple giving the region size
-            size = tuple(((bottom_right - top_left) / 2 ** self.level).astype(int))
+            size_out = tuple(((bottom_right - top_left) / 2 ** self.level).astype(int))
+            size_l0 = tuple(bottom_right - top_left)
 
-            biopsy_boundaries[biopsy_path] = {'top_left' : top_left, 
-                                                'location' : location,
-                                                'size': size}
-        return biopsy_boundaries
+            biopsy_dict[biopsy_path] = {'top_left' : top_left,
+                                        'bottom_right' : bottom_right, 
+                                        'size_out' : size_out,
+                                        'size_l0' : size_l0}
+        return biopsy_dict
 
-    def get_polygons(self, annotation_classes):
-        """
-        Function to collect all polygons from annotations in XML file
-        
-        Parameters:
-        annotation_classes (list): List of strings of annotation classes in the XML file
+    """
+    =================================================================================
+    =                                                                               =
+    =                           GENERATION OF PNGs                                  =
+    =                                                                               =
+    =================================================================================
+    """
 
-        Returns:
-        polygons (dict): Dictionary with list of polygons for each annotation class with
-        structure: {annotation_class : polygons_list[polygon1[[x1, y1], [x2, y2]...], ..., polygonN[[x1, y1], [x2, y2]...]]}
-        """
-
-        polygons = {annotation_class : [self.get_coords(polygon_group) for polygon_group in self.get_elements_in_group(annotation_class)] 
-                                                                        for annotation_class in annotation_classes}
-
-        if self.verbatim:
-            print(f"Annotation polygons found for {self.WSI_name} in {self.dataset} dataset")
-            [print(f"\tFor {ann_group} found {len(polys)} annotations in WSI") for ann_group, polys in polygons.items()]
-        return polygons
-
-    def generate_biopsies(self):
-        """
-        Function to extract and save all biopsies from self.biopsy_boundaries at certain zoom level. Each biopsy
+    def generate_biopsy(self, biopsy_path):
+        """Function to extract and save one biopsy from self.biopsy_dict at certain zoom level. Each biopsy
         is saved as biopsy.png in its subfolder of WSI_name.
         """
-        for biopsy_path, biopsy_dict in self.biopsy_boundaries.items():
-            if self.verbatim: print(f"Extracting biopsy {biopsy_path}")
-            location, size = biopsy_dict['location'], biopsy_dict['size']
-            biopsy_img = self.TIFF.read_region(location, self.level, size)
-            biopsy_img.save(os.path.join(*[biopsy_path, "biopsy.png"]), "PNG")
+        
+        location, size_out = tuple(self.biopsy_dict[biopsy_path]['top_left']), self.biopsy_dict[biopsy_path]['size_out']
 
+        biopsy_img = self.TIFF.read_region(location, self.level, size_out)
+        biopsy_img.save(os.path.join(*[biopsy_path, "biopsy.png"]), "PNG")
 
-    def generate_exclude(self, biopsy_path, biopsy_dict):
-        """
-        Function to create and save binary mask for Exclude regions. Each mask
-        is saved as exclude.png in its subfolder of WSI_name.
+        biopsy_mono = np.asarray(biopsy_img.getchannel(1))
+        biopsy_img.close()
+        self.biopsy_dict[biopsy_path]['tissue_mask'] = self.generate_tissue_mask(biopsy_mono)
+
+    def generate_tissue_mask(self, biopsy_mono_channel, q=(2, 98)):
+        """Function to extract mask with all tissue in biopsy.
 
         Parameters:
-        biopsy_path (str): Path to subfolder of WSI_name corresponding to biopsy
-        biopsy_dict (dict): Dictionary with information on biopsy location and size.
-        """
-        # TODO use size 0 for correct scale.
-        top_left, size = biopsy_dict['top_left'], biopsy_dict['size']
-        polygons = self.polygons["Exclude"]
+        biopsy_mono_channel (array): G-channel array of size (W x H x 1) of biopsy to create mask from.
+        q (tuple): q value with low and high for np.percentile function.
 
-        exclude = Image.new(mode='1', size=tuple(size))
-        for polygon in polygons:
-            print("drawing polyon", polygon)
-            # ImageDraw.Draw(exclude).polygon(polygon, fill=1, outline=1)
-
-    def generate_mask(self, biopsy_path, biopsy_dict, label_map):
+        Returns:
+        tissue_mask (array): Boolean mask of size (W x H) corresponding to all tissue in biopsy
         """
-        Function to create and save 8bit mask for annotation regions. Each mask
+        # TODO Use Mathematical morphology for detecting of tissue masks: https://en.wikipedia.org/wiki/Mathematical_morphology
+        # Find all tisue and filter small objects from mask
+        p2, p98 = np.percentile(biopsy_mono_channel, q)
+        tissue_w_holes = exposure.rescale_intensity(biopsy_mono_channel, in_range=(p2, p98)) < 220
+        label_objects, _ = ndi.label(tissue_w_holes)
+        sizes = np.bincount(label_objects.ravel())
+        mask_sizes = sizes > 10000
+        mask_sizes[0] = 0
+        tissue_w_holes = mask_sizes[label_objects]
+        
+        # Find holes using inverse and filter out large holes
+        holes = np.invert(tissue_w_holes)
+        label_objects, _ = ndi.label(holes)
+        sizes = np.bincount(label_objects.ravel())
+        mask_sizes = sizes < 10000
+        mask_sizes[0] = 0
+        holes = mask_sizes[label_objects]
+        
+        return np.logical_or(tissue_w_holes, holes)
+
+    def generate_mask(self, biopsy_path):
+        """Function to create and save 8bit mask for annotation regions. Each mask
         is saved as mask.png in its subfolder of WSI_name.
 
         Parameters:
-        biopsy_path (str): Path to subfolder of WSI_name corresponding to biopsy
-        biopsy_dict (dict): Dictionary with information on biopsy location and size.
-        label_map (dict): Dictionary which maps each annotation class to a label
+        biopsy_path (str): Path to subfolder of WSI_name corresponding to biopsy.
+        label_map (dict): Dictionary which maps each annotation class to a label.
+        """
+        binary_masks = {ann_level : {} for ann_level in self.annotation_classes_dict.keys()}
+        # E-Stroma mask is created to substract regions inbetween glandular structures.
+        binary_masks['Special']['E-Stroma'] = self.create_binary_mask(biopsy_path, 'Special', 'E-Stroma')
+        # Store inverted mask for effeciency.
+        e_stroma_inv = np.invert(binary_masks['Special']['E-Stroma'])
+
+        # Create binary masks of all Glandular level structures
+        for ann_class in self.annotation_classes_dict['G-level']:
+            ann_class_mask = self.create_binary_mask(biopsy_path, 'G-level', ann_class)
+            binary_masks['G-level'][ann_class] = np.logical_and(ann_class_mask, e_stroma_inv)
+
+        # Update inverted mask with all Glandular structures and E-Stroma
+        g_level_inv = np.invert(np.any(np.array(np.array(list(binary_masks['G-level'].values()) + [binary_masks['Special']['E-Stroma']])), axis=0))
+        
+        # Create binary masks of all Tissue level structures and subtract all G-level masks
+        for ann_class in self.annotation_classes_dict['T-level']:
+            ann_class_mask = self.create_binary_mask(biopsy_path, 'T-level', ann_class)
+            binary_masks['T-level'][ann_class] = np.logical_and(ann_class_mask, g_level_inv)
+
+        if self.extract_stroma:
+            # Update inverted mask with all found structures
+            all_level_inv = np.invert(np.any(np.array(np.array(list(binary_masks['G-level'].values()) + list(binary_masks['T-level'].values()) + [binary_masks['Special']['E-Stroma']])), axis=0))
+            
+            unannotated_stroma = np.logical_and(all_level_inv, self.biopsy_dict[biopsy_path]['tissue_mask'])
+            binary_masks['Special']['E-Stroma'] = np.logical_or(binary_masks['Special']['E-Stroma'], unannotated_stroma)
+
+        final_mask = self.combine_binary_masks(biopsy_path, binary_masks)
+
+        final_mask = Image.fromarray(final_mask, mode="L")
+        final_mask.save(os.path.join(*[biopsy_path, "mask.png"]), "PNG")
+        final_mask.close()
+
+    def generate_exclude(self, biopsy_path):
+        """Function to create and save binary mask for Exclude regions. Each mask
+        is saved as exclude.png in its subfolder of WSI_name.
+        """
+        exclude = self.create_binary_mask(biopsy_path, "Special", "Exclude")
+        exclude = Image.fromarray(exclude, '1')
+        exclude.save(os.path.join(*[biopsy_path, "exclude.png"]), "PNG")
+        exclude.close()
+
+    """
+    =================================================================================
+    =                                                                               =
+    =                           BINARY MASK CREATION                                =
+    =                                                                               =
+    =================================================================================
+    """
+
+    def create_binary_mask(self, biopsy_path, ann_level, ann_class):
+        """Function to create binary mask for certain annotation class. Tissue mask is applied for 
+        better boundaries. Polygons found in XML file are used.
+        
+        Parameters:
+        biopsy_path (str): Path to subfolder of WSI_name corresponding to biopsy.
+        ann_level (str): Annotation level of annotation class (G-level, T-level or Special).
+        ann_class (str): Annotation class to create binary mask for.
+
+        Returns:
+        mask (array): Binary mask with filled in polygons according to annotation class.
+        """
+        top_left, bottom_right = self.biopsy_dict[biopsy_path]['top_left'], self.biopsy_dict[biopsy_path]['bottom_right']
+        size_l0 = self.biopsy_dict[biopsy_path]['size_l0']
+
+        mask = Image.new(mode='1', size=tuple(size_l0))
+        polygons = self.polygons[ann_level][ann_class]
+        for polygon in polygons:
+            if self.polygon_in_boundaries(polygon, top_left, bottom_right):
+                norm_polygon = [tuple(p - top_left) for p in polygon]
+                ImageDraw.Draw(mask).polygon(norm_polygon, fill=1, outline=1)
+
+        size_out = self.biopsy_dict[biopsy_path]['size_out']
+        mask = mask.resize(tuple(size_out), Image.ANTIALIAS)
+        return np.logical_and(np.array(mask), self.biopsy_dict[biopsy_path]['tissue_mask'])
+
+    def combine_binary_masks(self, biopsy_path, binary_masks):
+        """Function that combines all binary mask into one uint8 array        
+        """
+        max_label = max(self.label_map.values()) + 1    # add one because of background class
+        width, height = self.biopsy_dict[biopsy_path]['size_out']
+
+        final_mask = np.zeros((height, width, max_label), dtype=bool)
+
+        for _, ann_level_dict in binary_masks.items():
+            for ann_class, bin_mask in ann_level_dict.items():
+                label = self.label_map[ann_class]
+                final_mask[:, :, label] = np.logical_or(final_mask[:, :, label], bin_mask)
+
+        # Add ones everywhere in background class to ensure label is given
+        final_mask[:, :, 0] = np.ones_like(final_mask[:, :, 0])
+
+        # TODO Remove if not needed
+        overlapping = Image.fromarray(np.where(np.count_nonzero(final_mask, axis=-1) > 2, 1, 0).astype(bool), mode='1')
+        overlapping.save(os.path.join(*[biopsy_path, "overlapping.png"]), "PNG")
+
+        # Return max_label minus reversed argmax to ensure highest label has priority
+        return (max_label - 1 - np.argmax(final_mask[:, :, ::-1], axis=-1)).astype(np.uint8)
+
+    def _mask_exclude(self, biopsy_path):
+        """Function to mask out regions of biopsy.png and mask.png using corresponding exclude.png
+
         """
         raise NotImplementedError
-    
 
-    def _mask_exclude(self):
-        """
-        Function to mask out regions of biopsy.png using corresponding exclude.png
-        """
-        raise NotImplementedError
-
-    # ======================== HELPER FUNCTIONS ================================
+    """
+    =================================================================================
+    =                                                                               =
+    =                           HELPER FUNCTIONS                                    =
+    =                                                                               =
+    =================================================================================
+    """
     def magnification2level(self, magnification):
-        """
-        Function to get level from specified magnifications
+        """Function to get level from specified magnifications
 
         Parameters:
         magnification (int): Zoom level to use in TIFF file
@@ -197,8 +340,7 @@ class WSI2Biopsy():
         return MAGN2LEVEL[magnification]
 
     def create_biopsy_dir(self, biopsy):
-        """
-        Function to create subfolder for a biopsy in TIFF file using XML element
+        """Function to create subfolder for a biopsy in TIFF file using XML element
 
         Parameters:
         biopsy (element): XML element of biopsy annotation.
@@ -213,8 +355,7 @@ class WSI2Biopsy():
         return biopsy_path
 
     def get_elements_in_group(self, group):
-        """
-        Function to get all elements of certain group of annotations in the XML tree.
+        """Function to get all elements of certain group of annotations in the XML tree.
 
         Parameters:
         group (str): String of PartOfGroup group to extract all elements
@@ -224,9 +365,54 @@ class WSI2Biopsy():
         """
         return self.XML.findall(f".//Annotation/.[@PartOfGroup='{group}']")
 
+    def load_biopsy(self, biopsy_path):
+        return Image.open(os.path.join(*[biopsy_path, "biopsy.png"]))
+
+    def load_mask(self, biopsy_path):
+        return Image.open(os.path.join(*[biopsy_path, "mask.png"]))
+
+    def load_exclude(self, biopsy_path):
+        return Image.open(os.path.join(*[biopsy_path, "exclude.png"]))
+       
+    def load_overlapping(self, biopsy_path):
+        return Image.open(os.path.join(*[biopsy_path, "overlapping.png"]))
+
+    def plot_biopsy(self, biopsy_path):
+        biopsy  =   self.load_biopsy(biopsy_path)
+        overlap =   self.load_overlapping(biopsy_path)
+        mask    =   self.load_mask(biopsy_path)
+
+        _, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(24, 16))
+        ax1.set_title('Biopsy')
+        ax1.imshow(biopsy)
+        ax2.set_title('Overlapping')
+        ax2.imshow(overlap, interpolation='none')
+        ax3.set_title('Mask')
+        mask_imshow = ax3.imshow(mask, interpolation='none')
+
+        # From: https://stackoverflow.com/questions/25482876/how-to-add-legend-to-imshow-in-matplotlib
+        values = np.unique(mask)
+        # get the colors of the values, according to the 
+        # colormap used by imshow
+        colors = [ mask_imshow.cmap(mask_imshow.norm(value)) for value in values]
+        # create a patch (proxy artist) for every color 
+        patches = [ mpatches.Patch(color=colors[i], label=LABEL2ANN[value]) for i, value in enumerate(values) ]
+        # put those patched as legend-handles into the legend
+        plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
+
+        plt.show()
+
+
+    """
+    =================================================================================
+    =                                                                               =
+    =                           POLYGON EXTRACTION                                  =
+    =                                                                               =
+    =================================================================================
+    """
+
     def get_coords(self, element):
-        """
-        Function to get coordinates of polygon for certain element.
+        """Function to get coordinates of polygon for certain element.
 
         Parameters:
         element (element): Annotation element with coordinates for polygon inside.
@@ -240,91 +426,61 @@ class WSI2Biopsy():
         if len(coords) < 3:
             warnings.warn("Warning: Found polygon group with less than 3 elements")
         return coords
+    
+    def get_polygons(self, annotation_classes_dict):
+        """Function to collect all polygons from annotations in XML file
+        
+        Parameters:
+        annotation_classes (list): List of strings of annotation classes in the XML file
+
+        Returns:
+        polygons (dict): Dictionary with list of polygons for each annotation class with
+        structure: {ann_level : {annotation_class : polygons_list[polygon1[[x1, y1], [x2, y2]...], ..., polygonN[[x1, y1], [x2, y2]...]]}}
+        """
+        polygons = {}
+
+        for ann_level, annotation_classes in annotation_classes_dict.items():
+            polygons[ann_level] = {annotation_class : [self.get_coords(polygon_group) for polygon_group in self.get_elements_in_group(annotation_class)] 
+                                                                        for annotation_class in annotation_classes}
+        return polygons
+        
+    def polygon_in_boundaries(self, polygon, top_left, bottom_right):
+        """Function to determine if ANY of the xy coords from polygon lie in boundary of top_left and bottom_right
+
+        Parameters:
+        polygon (array): Array with coordinates of structure [[x1, y1], [x2, y2]...]
+        top_left (array): Array with x and y coordinates of top left of boundary
+        bottom_right (array): Array with x and y coordinates of bottom right of boundary
+
+        Returns:
+        True if ANY xy coordinate pair lies in boundary, False else
+        """
+        # Any x, y coordinate of Polygon between top_left and bottom_right
+        return np.amax(np.all(np.logical_and(np.greater_equal(polygon, top_left), np.less_equal(polygon, bottom_right)), axis=1))
 
 # %%
 if __name__ == "__main__":
     out_dir = "Barrett20x"
     root_dir = "TIFFs"
+
+    magnification = 20
+    extract_stroma = False
+    verbose = True
     # dataset = "RBE"
     # WSI_name = "ROCT24_IX-HE3"
-    # dataset = "RBE"
     # WSI_name = "RBET18-02665_HE-I_BIG"
+    # WSI_name = "RBET17-50490_HE-I"
     # dataset = "ASL"
     # WSI_name = "ASL28_1_HE"
+    # foobar = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, magnification=10, extract_stroma=True, verbose=True)
 
-    datasets = ["ASL", "Bolero", "LANS", "LANS-Tissue", "RBE", "RBE_Nieuw"]
-
+    datasets = ["Bolero", "LANS", "LANS-Tissue", "RBE", "RBE_Nieuw"]
     for dataset in datasets:
         WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(root_dir, dataset)) if file.endswith(".tiff")]
         print("DATASET ", dataset)
         for WSI_name in WSI_names:
-            foobar = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, magnification=10)
+            _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, magnification=20, extract_stroma=extract_stroma, verbose=verbose)
 
-
-    # %%
-    for biopsy_path, biopsy_dict in foobar.biopsy_boundaries.items():
-        top_left, bottom_right = biopsy_dict['top_left'], biopsy_dict['bottom_right']
-        polygons = foobar.polygons["Exclude"]
-        size = bottom_right - top_left
-
-        exclude = Image.new(mode='1', size=tuple(size))
-        print(exclude.size)
-        for polygon in polygons:
-
-            print(polygon - top_left)
-            ImageDraw.Draw(exclude).polygon(polygon - top_left, outline=1)
-        
-        
-        exclude.save('foobar_exclude.png')
-        # exclude.show()
-    
-    # %%
-
-    # import xml.dom.minidom
-
-    # dom = xml.dom.minidom.parse(os.path.join(*[root_dir, dataset, WSI_name]) +'.xml') # or xml.dom.minidom.parseString(xml_string)
-    # pretty_xml_as_string = dom.toprettyxml()
-    # print(pretty_xml_as_string)
     pass
 # %%
-from PIL import Image, ImageDraw
-import numpy as np
-import matplotlib.pyplot as plt
-from skimage.morphology import flood_fill
-from copy import copy
 
-size = [100000, 100000]
-
-exclude = Image.new(mode='1', size=tuple(size))
-print('create image')
-
-exclude_np = np.array(exclude).copy()
-print('read as array')
-# plt.imshow(exclude_np)
-# plt.show()
-
-# polygons = np.array([[[100, 1000], [500, 4000], [250, 6000]]])
-polygons = np.array([[[100, 100], [500, 400], [250, 600]]])
-top_left = np.array([50, 50])
-for polygon in polygons:
-    print(polygon)
-    polygon_tuples = [tuple(coord) for coord in polygon - top_left]
-    print(polygon_tuples)
-    ImageDraw.Draw(exclude).polygon(polygon_tuples, fill=1, outline=1)
-
-# foobar_floodfill = flood_fill(exclude, )
-exclude = exclude.resize((500, 500), resample=Image.NEAREST)
-exclude.save('foobar_exclude.png')
-
-exclude_np = np.array(exclude)
-print(np.amax(exclude_np), np.amin(exclude_np))
-print(exclude_np)
-plt.imshow(exclude_np, cmap='gray')
-plt.show()
-# exclude.show()
-# %%
-
-# https://docs.python.org/3/library/xml.etree.elementtree.html 
-# https://openslide.org/api/python/
-
-# %%

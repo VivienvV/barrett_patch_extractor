@@ -9,7 +9,7 @@ from scipy import ndimage as ndi
 from skimage import exposure
 # import concurrconda install scikit-imageent.futures
 
-image_path = "./TIFFs/Bolero/"
+image_path = "./TIFFs/RBE/"
 export_path = "./Barrett20x/old_code/"
 
 # which level to extract
@@ -79,7 +79,6 @@ for img in lijst:
             expfolder = img + "-" + str(roi_id)
             if not os.path.exists(os.path.join(export_path, expfolder)):
                 os.makedirs(os.path.join(export_path, expfolder))
-
             HE = image.read_region((ltx, lty), level, (int((rbx - ltx) / 2 ** level), int((rby - lty) / 2 ** level)))
             HE.save(os.path.join(export_path, expfolder, "img" + ".png"), "PNG")
 
