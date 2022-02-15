@@ -65,7 +65,8 @@ class WSI2Biopsy():
                 magnification=20,
                 extract_stroma=False, 
                 mask_exclude=False,
-                verbose=True):
+                verbose=True,
+                save_fig=False):
         """Function to extract N biopsies and masks from TIFF file with its corresponding XML file with annotations. 
 
         Parameters:
@@ -92,6 +93,7 @@ class WSI2Biopsy():
         self.extract_stroma = extract_stroma
         self.mask_exclude = mask_exclude
         self.verbose = verbose
+        self.save_fig = save_fig
 
         # Create output dir with all needed subfolders
         self.biopsy_out_dir = os.path.join(*[out_dir, dataset, WSI_name])
@@ -127,7 +129,11 @@ class WSI2Biopsy():
             if mask_exclude:
                 self._mask_exclude(biopsy_path)
 
-            if self.verbose: self.plot_biopsy(biopsy_path)
+            if self.save_fig: 
+                if self.verbose:
+                    print("\tSaving example figure...")
+                self.plot_biopsy(biopsy_path)
+            if self.verbose: print()
 
     def get_biopsy_dict(self):
         """Function to create folders for biopsy. Also collects biopsy boundaries from XML file and stores them
@@ -228,6 +234,13 @@ class WSI2Biopsy():
             ann_class_mask = self.create_binary_mask(biopsy_path, 'G-level', ann_class)
             binary_masks['G-level'][ann_class] = np.logical_and(ann_class_mask, e_stroma_inv)
 
+        if self.verbose:
+            print('\t\tGlandular level...')
+        g_level_mask = self.combine_binary_masks(biopsy_path, binary_masks)
+        g_level_mask = Image.fromarray(g_level_mask, mode="L")
+        g_level_mask.save(os.path.join(*[biopsy_path, "g_level_mask.png"]), "PNG")
+        g_level_mask.close()
+
         # Update inverted mask with all Glandular structures and E-Stroma
         g_level_inv = np.invert(np.any(np.array(np.array(list(binary_masks['G-level'].values()) + [binary_masks['Special']['E-Stroma']])), axis=0))
         
@@ -243,8 +256,9 @@ class WSI2Biopsy():
             unannotated_stroma = np.logical_and(all_level_inv, self.biopsy_dict[biopsy_path]['tissue_mask'])
             binary_masks['Special']['E-Stroma'] = np.logical_or(binary_masks['Special']['E-Stroma'], unannotated_stroma)
 
+        if self.verbose:
+            print('\t\tTissue level...')
         final_mask = self.combine_binary_masks(biopsy_path, binary_masks)
-
         final_mask = Image.fromarray(final_mask, mode="L")
         final_mask.save(os.path.join(*[biopsy_path, "mask.png"]), "PNG")
         final_mask.close()
@@ -309,8 +323,10 @@ class WSI2Biopsy():
         final_mask[:, :, 0] = np.ones_like(final_mask[:, :, 0])
 
         # TODO Remove if not needed
-        overlapping = Image.fromarray(np.where(np.count_nonzero(final_mask, axis=-1) > 2, 1, 0).astype(bool), mode='1')
-        overlapping.save(os.path.join(*[biopsy_path, "overlapping.png"]), "PNG")
+        # overlapping = Image.fromarray(np.where(np.count_nonzero(final_mask, axis=-1) > 2, 1, 0).astype(bool), mode='1')
+        # overlapping.save(os.path.join(*[biopsy_path, "overlapping.png"]), "PNG")
+        if self.verbose:
+            print(f"\t\t\tNumber of pixels with conflicting labels: {len(np.argwhere(np.count_nonzero(final_mask, axis=-1) > 2))}")
 
         # Return max_label minus reversed argmax to ensure highest label has priority
         return (max_label - 1 - np.argmax(final_mask[:, :, ::-1], axis=-1)).astype(np.uint8)
@@ -368,26 +384,30 @@ class WSI2Biopsy():
     def load_biopsy(self, biopsy_path):
         return Image.open(os.path.join(*[biopsy_path, "biopsy.png"]))
 
-    def load_mask(self, biopsy_path):
-        return Image.open(os.path.join(*[biopsy_path, "mask.png"]))
+    def load_mask(self, biopsy_path, ann_level='tissue'):
+        if ann_level == 'tissue':
+            mask_filename = 'mask.png'
+        elif ann_level == 'glandular':
+            mask_filename = 'g_level_mask.png'
+
+        return Image.open(os.path.join(*[biopsy_path, mask_filename]))
 
     def load_exclude(self, biopsy_path):
         return Image.open(os.path.join(*[biopsy_path, "exclude.png"]))
-       
-    def load_overlapping(self, biopsy_path):
-        return Image.open(os.path.join(*[biopsy_path, "overlapping.png"]))
 
     def plot_biopsy(self, biopsy_path):
-        biopsy  =   self.load_biopsy(biopsy_path)
-        overlap =   self.load_overlapping(biopsy_path)
-        mask    =   self.load_mask(biopsy_path)
+        biopsy = self.load_biopsy(biopsy_path)
+        g_level_mask = self.load_mask(biopsy_path, 'glandular')
+        mask = self.load_mask(biopsy_path, 'tissue')
 
         _, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(24, 16))
         ax1.set_title('Biopsy')
         ax1.imshow(biopsy)
-        ax2.set_title('Overlapping')
-        ax2.imshow(overlap, interpolation='none')
-        ax3.set_title('Mask')
+
+        ax2.set_title('Glandular-level Mask')
+        ax2.imshow(g_level_mask, interpolation='none')
+
+        ax3.set_title('Tissue-level Mask')
         mask_imshow = ax3.imshow(mask, interpolation='none')
 
         # From: https://stackoverflow.com/questions/25482876/how-to-add-legend-to-imshow-in-matplotlib
@@ -399,8 +419,8 @@ class WSI2Biopsy():
         patches = [ mpatches.Patch(color=colors[i], label=LABEL2ANN[value]) for i, value in enumerate(values) ]
         # put those patched as legend-handles into the legend
         plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
-
-        plt.show()
+        plt.savefig(os.path.join(*[biopsy_path, "example_plot.png"]), format='png')
+        plt.close()
 
 
     """
@@ -465,7 +485,9 @@ if __name__ == "__main__":
 
     magnification = 20
     extract_stroma = False
+
     verbose = True
+    save_fig = True
     # dataset = "RBE"
     # WSI_name = "ROCT24_IX-HE3"
     # WSI_name = "RBET18-02665_HE-I_BIG"
@@ -474,13 +496,14 @@ if __name__ == "__main__":
     # WSI_name = "ASL28_1_HE"
     # foobar = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, magnification=10, extract_stroma=True, verbose=True)
 
-    datasets = ["Bolero", "LANS", "LANS-Tissue", "RBE", "RBE_Nieuw"]
+    if verbose:
+        print(f"Extracting datasets at {magnification}x magnification from {root_dir} as root directory and saving in {out_dir}")
+
+    datasets = ["Bolero", "LANS", "RBE", "RBE_Nieuw", "ASL", "LANS-Tissue"]
     for dataset in datasets:
         WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(root_dir, dataset)) if file.endswith(".tiff")]
-        print("DATASET ", dataset)
+        print(f"========= EXTRACTING DATASET {dataset} ============")
         for WSI_name in WSI_names:
-            _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, magnification=20, extract_stroma=extract_stroma, verbose=verbose)
+            _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
 
     pass
-# %%
-
