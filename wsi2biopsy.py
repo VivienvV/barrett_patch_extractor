@@ -3,9 +3,9 @@ import os
 import warnings
 import re
 from pathlib import Path
+import argparse
 
 import numpy as np
-import numpy.ma as ma
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
@@ -19,14 +19,15 @@ import xml.etree.ElementTree as ET
 import openslide
 
 # %%
-
-ANNOTATION_CLASSES_DICT_T_LEVEL = {"Special"  : ["Biopsy-Outlines", "E-Stroma", "Exclude"], 
-                            "G-level" : ["NDBE-G", "LGD-G", "HGD-G"],
-                            "T-level" : ["Squamous-T", "NDBE-T", "LGD-T", "HGD-T"] }
+DATASETS = ["ASL", "Bolero", "LANS", "RBE", "RBE_Nieuw", "LANS-Tissue"]
 
 ANNOTATION_CLASSES_DICT = {"Special"  : ["Biopsy-Outlines", "E-Stroma", "Exclude"], 
                             "G-level" : ["NDBE-G", "LGD-G", "HGD-G"],
-                            "T-level" : ["Squamous-T"] }
+                            "T-level" : ["Squamous-T"]}
+
+ANNOTATION_CLASSES_DICT_T_LEVEL = {"Special"  : ["Biopsy-Outlines", "E-Stroma", "Exclude"], 
+                            "G-level" : ["NDBE-G", "LGD-G", "HGD-G"],
+                            "T-level" : ["Squamous-T", "NDBE-T", "LGD-T", "HGD-T"]}
 
 ANN2LABEL = {"Biopsy-Outlines"  : 0,
             "E-Stroma"          : 1,
@@ -36,8 +37,8 @@ ANN2LABEL = {"Biopsy-Outlines"  : 0,
             "LGD-G"             : 4, 
             "LGD-T"             : 4, 
             "HGD-G"             : 5, 
-            "HGD-T"             : 5,
-}
+            "HGD-T"             : 5
+            }
 
 LABEL2ANN = {0  : "Background",
             1   : "E-Stroma",
@@ -45,7 +46,7 @@ LABEL2ANN = {0  : "Background",
             3   : "NDBE",
             4   : "LGD",
             5   : "HGD"
-}
+            }
 
 MAGN2LEVEL = {  40  : 0,
                 20  : 1,
@@ -58,6 +59,7 @@ MAGN2LEVEL = {  40  : 0,
                 # 0.15625 : 8
                 }
 
+# %%
 class WSI2Biopsy():
     def __init__(self, 
                 root_dir, 
@@ -481,40 +483,89 @@ class WSI2Biopsy():
 
 # %%
 if __name__ == "__main__":
-    out_dir = "../Barrett20x"
-    root_dir = "TIFFs"
+    # out_dir = "../Barrett20x"
+    # root_dir = "TIFFs"
 
-    magnification = 20
-    extract_stroma = False
+    # magnification = 20
+    # extract_stroma = False
 
-    verbose = True
-    save_fig = True
+    # verbose = True
+    # save_fig = True
 
-    annotation_classes_dict=ANNOTATION_CLASSES_DICT
-    print(annotation_classes_dict)
-    datasets = ["Bolero", "LANS", "RBE", "RBE_Nieuw", "ASL", "LANS-Tissue"]
+    # annotation_classes_dict=ANNOTATION_CLASSES_DICT
+    # print(annotation_classes_dict)
+    # datasets = ["RBE_Nieuw"] #, "ASL", "LANS-Tissue"]
 
-    if verbose:
-        print(f"Extracting datasets at {magnification}x magnification from {root_dir} as root directory and saving in {out_dir}")
+    # if verbose:
+    #     print(f"Extracting datasets at {magnification}x magnification from {root_dir} as root directory and saving in {out_dir}")
 
-    for dataset in datasets:
-        WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(root_dir, dataset)) if file.endswith(".tiff")]
-        print(f"========= EXTRACTING DATASET {dataset} ============")
+    # for dataset in datasets:
+    #     WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(root_dir, dataset)) if file.endswith(".tiff")]
+    #     print(f"========= EXTRACTING DATASET {dataset} ============")
+    #     for WSI_name in WSI_names:
+    #         _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, annotation_classes_dict=annotation_classes_dict, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
+
+    # print("Using T-level annotations")
+    # out_dir = "../Barrett20x_T_level"
+    # annotation_classes_dict=ANNOTATION_CLASSES_DICT_T_LEVEL
+    # datasets = ["ASL", "Bolero", "LANS", "RBE", "RBE_Nieuw", "LANS-Tissue"]
+    # print(annotation_classes_dict)
+    # if verbose:
+    #     print(f"Extracting datasets at {magnification}x magnification from {root_dir} as root directory and saving in {out_dir}")
+
+    # for dataset in datasets:
+    #     WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(root_dir, dataset)) if file.endswith(".tiff")]
+    #     print(f"========= EXTRACTING DATASET {dataset} ============")
+    #     for WSI_name in WSI_names:
+    #         if WSI_name == "RBET18-02665_HE-I_BIG":
+    #             continue
+    #         _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, annotation_classes_dict=annotation_classes_dict, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
+
+    # pass
+
+    parser = argparse.ArgumentParser()
+    # Directories
+    parser.add_argument('--root_dir', type=str, default='TIFFs',
+                        help='Path to dataset with WSI')
+    parser.add_argument('--out_dir', type=str, default='Barrett20x',
+                        help='Path to store biopsies of dataset')
+
+    # Dataset specifications
+    parser.add_argument('--datasets', type=list, default=DATASETS,
+                        help='Datasets to extract')
+    parser.add_argument('--annotation_classes_dict', type=dict, default=ANNOTATION_CLASSES_DICT,
+                        help='Nested annotation classes dict')
+    parser.add_argument('--label_map', type=dict, default=ANN2LABEL,
+                        help='Dictionary that maps from labels to annotation class')
+    parser.add_argument('--magnification', type=int, default=20,
+                        help='Magnification to extract biopsies from WSI')
+
+    # Extra flags
+    parser.add_argument('--extract_stroma', action='store_true', default=False,
+                        help='If True, assign all unannotated tissue to stroma class')                    
+    parser.add_argument('--mask_exclude', action='store_true', default=False,
+                        help='If True, black out Exclude regions in biopsy.png and mask.png')    
+    parser.add_argument('--verbose', action='store_true', default=False,
+                        help='If True, print statements during parsing')
+    parser.add_argument('--save_fig', action='store_true', default=False,
+                        help='If True, save figure of Biopsy, G and T level mask')    
+
+    config = parser.parse_args()
+
+    if config.verbose: print(f"Extracting datasets at {config.magnification}x magnification from {config.root_dir} as root directory and saving in {config.out_dir}")
+
+    for dataset in config.datasets:
+        WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(config.root_dir, dataset)) if file.endswith(".tiff")]
+        if config.verbose: print(f"========= EXTRACTING DATASET {dataset} ============")
         for WSI_name in WSI_names:
-            _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, annotation_classes_dict=annotation_classes_dict, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
+            _ = WSI2Biopsy(config.root_dir, 
+                            dataset, 
+                            WSI_name, 
+                            config.out_dir, 
+                            annotation_classes_dict=config.annotation_classes_dict, 
+                            magnification=config.magnification, 
+                            extract_stroma=config.extract_stroma, 
+                            verbose=config.verbose, 
+                            save_fig=config.save_fig)
 
-    print("Using T-level annotations")
-    out_dir = "../Barrett20x_T_level"
-    annotation_classes_dict=ANNOTATION_CLASSES_DICT_T_LEVEL
-    print(annotation_classes_dict)
-    if verbose:
-        print(f"Extracting datasets at {magnification}x magnification from {root_dir} as root directory and saving in {out_dir}")
-
-    for dataset in datasets:
-        WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(root_dir, dataset)) if file.endswith(".tiff")]
-        print(f"========= EXTRACTING DATASET {dataset} ============")
-        for WSI_name in WSI_names:
-            _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, annotation_classes_dict=annotation_classes_dict, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
-
-    pass
 # %%
