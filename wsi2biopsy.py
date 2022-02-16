@@ -82,7 +82,7 @@ class WSI2Biopsy():
         label_map (dict): Dictionary with label corresponding to annotation group.
         magnification (int): Integer at which magnification to the biopsies. Options are: [40, 20, 10, 5, ...].
         extract_stroma (bool): If set to True, stroma regions will be separated from background regions and be combined with E-Stroma class. If set to False, stroma and background regions will be combined into one label.
-        mask_exclude (bool): If set to True, regions annotated with “Exclude” will be masked in the resulting images.
+        mask_exclude (bool): If set to True, regions annotated with Exclude will be masked in the resulting images.
         verbose (bool): If set to True, prints with progress updates will be made.
         """
 
