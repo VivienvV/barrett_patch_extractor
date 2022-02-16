@@ -481,7 +481,7 @@ class WSI2Biopsy():
 
 # %%
 if __name__ == "__main__":
-    out_dir = "Barrett20x"
+    out_dir = "../Barrett20x"
     root_dir = "TIFFs"
 
     magnification = 20
@@ -489,22 +489,32 @@ if __name__ == "__main__":
 
     verbose = True
     save_fig = True
-    # dataset = "RBE"
-    # WSI_name = "ROCT24_IX-HE3"
-    # WSI_name = "RBET18-02665_HE-I_BIG"
-    # WSI_name = "RBET17-50490_HE-I"
-    # dataset = "ASL"
-    # WSI_name = "ASL28_1_HE"
+
+    annotation_classes_dict=ANNOTATION_CLASSES_DICT
+    print(annotation_classes_dict)
+    datasets = ["Bolero", "LANS", "RBE", "RBE_Nieuw", "ASL", "LANS-Tissue"]
 
     if verbose:
         print(f"Extracting datasets at {magnification}x magnification from {root_dir} as root directory and saving in {out_dir}")
 
-    datasets = ["Bolero", "LANS", "RBE", "RBE_Nieuw", "ASL", "LANS-Tissue"]
     for dataset in datasets:
         WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(root_dir, dataset)) if file.endswith(".tiff")]
         print(f"========= EXTRACTING DATASET {dataset} ============")
         for WSI_name in WSI_names:
-            _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, annotation_classes_dict=ANNOTATION_CLASSES_DICT, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
+            _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, annotation_classes_dict=annotation_classes_dict, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
+
+    print("Using T-level annotations")
+    out_dir = "../Barrett20x_T_level"
+    annotation_classes_dict=ANNOTATION_CLASSES_DICT_T_LEVEL
+    print(annotation_classes_dict)
+    if verbose:
+        print(f"Extracting datasets at {magnification}x magnification from {root_dir} as root directory and saving in {out_dir}")
+
+    for dataset in datasets:
+        WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(root_dir, dataset)) if file.endswith(".tiff")]
+        print(f"========= EXTRACTING DATASET {dataset} ============")
+        for WSI_name in WSI_names:
+            _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, annotation_classes_dict=annotation_classes_dict, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
 
     pass
 # %%
