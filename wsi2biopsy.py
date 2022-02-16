@@ -20,9 +20,13 @@ import openslide
 
 # %%
 
-ANNOTATION_CLASSES_DICT = {"Special"  : ["Biopsy-Outlines", "E-Stroma", "Exclude"], 
+ANNOTATION_CLASSES_DICT_T_LEVEL = {"Special"  : ["Biopsy-Outlines", "E-Stroma", "Exclude"], 
                             "G-level" : ["NDBE-G", "LGD-G", "HGD-G"],
                             "T-level" : ["Squamous-T", "NDBE-T", "LGD-T", "HGD-T"] }
+
+ANNOTATION_CLASSES_DICT = {"Special"  : ["Biopsy-Outlines", "E-Stroma", "Exclude"], 
+                            "G-level" : ["NDBE-G", "LGD-G", "HGD-G"],
+                            "T-level" : ["Squamous-T"] }
 
 ANN2LABEL = {"Biopsy-Outlines"  : 0,
             "E-Stroma"          : 1,
@@ -234,12 +238,12 @@ class WSI2Biopsy():
             ann_class_mask = self.create_binary_mask(biopsy_path, 'G-level', ann_class)
             binary_masks['G-level'][ann_class] = np.logical_and(ann_class_mask, e_stroma_inv)
 
-        if self.verbose:
+        if self.verbose and self.save_fig:
             print('\t\tGlandular level...')
-        g_level_mask = self.combine_binary_masks(biopsy_path, binary_masks)
-        g_level_mask = Image.fromarray(g_level_mask, mode="L")
-        g_level_mask.save(os.path.join(*[biopsy_path, "g_level_mask.png"]), "PNG")
-        g_level_mask.close()
+            g_level_mask = self.combine_binary_masks(biopsy_path, binary_masks)
+            g_level_mask = Image.fromarray(g_level_mask, mode="L")
+            g_level_mask.save(os.path.join(*[biopsy_path, "g_level_mask.png"]), "PNG")
+            g_level_mask.close()
 
         # Update inverted mask with all Glandular structures and E-Stroma
         g_level_inv = np.invert(np.any(np.array(np.array(list(binary_masks['G-level'].values()) + [binary_masks['Special']['E-Stroma']])), axis=0))
@@ -322,9 +326,6 @@ class WSI2Biopsy():
         # Add ones everywhere in background class to ensure label is given
         final_mask[:, :, 0] = np.ones_like(final_mask[:, :, 0])
 
-        # TODO Remove if not needed
-        # overlapping = Image.fromarray(np.where(np.count_nonzero(final_mask, axis=-1) > 2, 1, 0).astype(bool), mode='1')
-        # overlapping.save(os.path.join(*[biopsy_path, "overlapping.png"]), "PNG")
         if self.verbose:
             print(f"\t\t\tNumber of pixels with conflicting labels: {len(np.argwhere(np.count_nonzero(final_mask, axis=-1) > 2))}")
 
@@ -494,7 +495,6 @@ if __name__ == "__main__":
     # WSI_name = "RBET17-50490_HE-I"
     # dataset = "ASL"
     # WSI_name = "ASL28_1_HE"
-    # foobar = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, magnification=10, extract_stroma=True, verbose=True)
 
     if verbose:
         print(f"Extracting datasets at {magnification}x magnification from {root_dir} as root directory and saving in {out_dir}")
@@ -504,6 +504,7 @@ if __name__ == "__main__":
         WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(root_dir, dataset)) if file.endswith(".tiff")]
         print(f"========= EXTRACTING DATASET {dataset} ============")
         for WSI_name in WSI_names:
-            _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
+            _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, annotation_classes_dict=ANNOTATION_CLASSES_DICT, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
 
     pass
+# %%
