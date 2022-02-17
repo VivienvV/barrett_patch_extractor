@@ -6,8 +6,6 @@ from pathlib import Path
 import argparse
 
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 
 from PIL import Image, ImageDraw
 Image.MAX_IMAGE_PIXELS = None # Change max pixel setting to allow to open big images
@@ -18,16 +16,16 @@ from skimage import exposure
 import xml.etree.ElementTree as ET
 import openslide
 
+from utils import open_PIL_file, plot_biopsy, magnification2level, polygons2str
+
 # %%
+# DEFAULT MAPPINGS
 DATASETS = ["ASL", "Bolero", "LANS", "RBE", "RBE_Nieuw", "LANS-Tissue"]
 
 ANNOTATION_CLASSES_DICT = {"Special"  : ["Biopsy-Outlines", "E-Stroma", "Exclude"], 
                             "G-level" : ["NDBE-G", "LGD-G", "HGD-G"],
-                            "T-level" : ["Squamous-T"]}
-
-ANNOTATION_CLASSES_DICT_T_LEVEL = {"Special"  : ["Biopsy-Outlines", "E-Stroma", "Exclude"], 
-                            "G-level" : ["NDBE-G", "LGD-G", "HGD-G"],
-                            "T-level" : ["Squamous-T", "NDBE-T", "LGD-T", "HGD-T"]}
+                            "T-level" : ["Squamous-T"]
+                            }
 
 ANN2LABEL = {"Biopsy-Outlines"  : 0,
             "E-Stroma"          : 1,
@@ -39,25 +37,6 @@ ANN2LABEL = {"Biopsy-Outlines"  : 0,
             "HGD-G"             : 5, 
             "HGD-T"             : 5
             }
-
-LABEL2ANN = {0  : "Background",
-            1   : "E-Stroma",
-            2   : "Squamous-T",
-            3   : "NDBE",
-            4   : "LGD",
-            5   : "HGD"
-            }
-
-MAGN2LEVEL = {  40  : 0,
-                20  : 1,
-                10  : 2,
-                5   : 3,
-                # 2.5 : 4,
-                # 1.25 : 5,
-                # 0.625 : 6,
-                # 0.3125 : 7,
-                # 0.15625 : 8
-                }
 
 # %%
 class WSI2Biopsy():
@@ -71,8 +50,7 @@ class WSI2Biopsy():
                 magnification=20,
                 extract_stroma=False, 
                 mask_exclude=False,
-                verbose=True,
-                save_fig=False):
+                verbose=True):
         """Function to extract N biopsies and masks from TIFF file with its corresponding XML file with annotations. 
 
         Parameters:
@@ -95,11 +73,10 @@ class WSI2Biopsy():
         self.annotation_classes_dict = annotation_classes_dict
         self.label_map = label_map
 
-        self.level = self.magnification2level(magnification)
+        self.level = magnification2level(magnification)
         self.extract_stroma = extract_stroma
         self.mask_exclude = mask_exclude
         self.verbose = verbose
-        self.save_fig = save_fig
 
         # Create output dir with all needed subfolders
         self.biopsy_out_dir = os.path.join(*[out_dir, dataset, WSI_name])
@@ -110,64 +87,23 @@ class WSI2Biopsy():
         self.XML = ET.parse(os.path.join(*[root_dir, dataset, WSI_name]) +'.xml').getroot()
         
         # Create dictionaries for polygons (values) for each class (key)
-        self.polygons = self.get_polygons(annotation_classes_dict)
-        if self.verbose:
-            print(f"Annotation polygons found for {self.WSI_name} in {self.dataset} dataset")
-            for ann_level, ann_groups in self.polygons.items():
-                print(f"\t{ann_level} annotations in WSI:")
-                for ann_group, polys in ann_groups.items():
-                    print(f"\t\tFor {ann_group} found {len(polys)} annotations.")
-            print("")
+        self.polygons = self.get_polygons(annotation_classes_dict)            
 
         # Create dictionaries for biopsy boundaries and extract biopsies
         self.biopsy_dict = self.get_biopsy_dict()
 
         # Create for every biopsy a biopsy.png, exclude.png and mask.png
         for biopsy_path in self.biopsy_dict.keys():
-            if self.verbose: print(f"Extracting biopsy {biopsy_path}\n\tGenerating biopsy...")
-            self.generate_biopsy(biopsy_path)
-            if self.verbose: print("\tGenerating mask...")
-            self.generate_mask(biopsy_path)
+            if self.verbose: print(f"Extracting biopsy {biopsy_path}")
 
-            if self.verbose: print("\tGenerating exclude...")
+            self.generate_biopsy(biopsy_path)
+            self.generate_mask(biopsy_path)
             self.generate_exclude(biopsy_path)
 
             if mask_exclude:
                 self._mask_exclude(biopsy_path)
 
-            if self.save_fig: 
-                if self.verbose:
-                    print("\tSaving example figure...")
-                self.plot_biopsy(biopsy_path)
             if self.verbose: print()
-
-    def get_biopsy_dict(self):
-        """Function to create folders for biopsy. Also collects biopsy boundaries from XML file and stores them
-        in a dictionary
-
-        Returns:
-        biopsy_dict (dict): Dictionary with biopsy_path as key and dictionary as value with top_left, bottom_right
-        location (in level 0) and sizes (calculated for self.level and on level 0) for every biopsy
-        """
-        biopsy_dict = {}
-
-        for biopsy in self.get_elements_in_group("Biopsy-Outlines"):
-            biopsy_path = self.create_biopsy_dir(biopsy)
-            biopsy_coords = self.get_coords(biopsy)
-
-            # Location = top_left: (x, y) tuple giving the top left pixel in the level 0 reference frame
-            top_left = np.amin(biopsy_coords, axis=0)
-            bottom_right = np.amax(biopsy_coords, axis=0)
-
-            # Size: (width, height) tuple giving the region size
-            size_out = tuple(((bottom_right - top_left) / 2 ** self.level).astype(int))
-            size_l0 = tuple(bottom_right - top_left)
-
-            biopsy_dict[biopsy_path] = {'top_left' : top_left,
-                                        'bottom_right' : bottom_right, 
-                                        'size_out' : size_out,
-                                        'size_l0' : size_l0}
-        return biopsy_dict
 
     """
     =================================================================================
@@ -181,7 +117,7 @@ class WSI2Biopsy():
         """Function to extract and save one biopsy from self.biopsy_dict at certain zoom level. Each biopsy
         is saved as biopsy.png in its subfolder of WSI_name.
         """
-        
+        if self.verbose: print("\tGenerating biopsy...")
         location, size_out = tuple(self.biopsy_dict[biopsy_path]['top_left']), self.biopsy_dict[biopsy_path]['size_out']
 
         biopsy_img = self.TIFF.read_region(location, self.level, size_out)
@@ -229,6 +165,7 @@ class WSI2Biopsy():
         biopsy_path (str): Path to subfolder of WSI_name corresponding to biopsy.
         label_map (dict): Dictionary which maps each annotation class to a label.
         """
+        if self.verbose: print("\tGenerating mask...")
         binary_masks = {ann_level : {} for ann_level in self.annotation_classes_dict.keys()}
         # E-Stroma mask is created to substract regions inbetween glandular structures.
         binary_masks['Special']['E-Stroma'] = self.create_binary_mask(biopsy_path, 'Special', 'E-Stroma')
@@ -240,13 +177,6 @@ class WSI2Biopsy():
             ann_class_mask = self.create_binary_mask(biopsy_path, 'G-level', ann_class)
             binary_masks['G-level'][ann_class] = np.logical_and(ann_class_mask, e_stroma_inv)
 
-        if self.verbose and self.save_fig:
-            print('\t\tGlandular level...')
-            g_level_mask = self.combine_binary_masks(biopsy_path, binary_masks)
-            g_level_mask = Image.fromarray(g_level_mask, mode="L")
-            g_level_mask.save(os.path.join(*[biopsy_path, "g_level_mask.png"]), "PNG")
-            g_level_mask.close()
-
         # Update inverted mask with all Glandular structures and E-Stroma
         g_level_inv = np.invert(np.any(np.array(np.array(list(binary_masks['G-level'].values()) + [binary_masks['Special']['E-Stroma']])), axis=0))
         
@@ -255,15 +185,13 @@ class WSI2Biopsy():
             ann_class_mask = self.create_binary_mask(biopsy_path, 'T-level', ann_class)
             binary_masks['T-level'][ann_class] = np.logical_and(ann_class_mask, g_level_inv)
 
+        # All unnanotated regions on tissue mask are seen as stroma
         if self.extract_stroma:
-            # Update inverted mask with all found structures
             all_level_inv = np.invert(np.any(np.array(np.array(list(binary_masks['G-level'].values()) + list(binary_masks['T-level'].values()) + [binary_masks['Special']['E-Stroma']])), axis=0))
             
             unannotated_stroma = np.logical_and(all_level_inv, self.biopsy_dict[biopsy_path]['tissue_mask'])
             binary_masks['Special']['E-Stroma'] = np.logical_or(binary_masks['Special']['E-Stroma'], unannotated_stroma)
 
-        if self.verbose:
-            print('\t\tTissue level...')
         final_mask = self.combine_binary_masks(biopsy_path, binary_masks)
         final_mask = Image.fromarray(final_mask, mode="L")
         final_mask.save(os.path.join(*[biopsy_path, "mask.png"]), "PNG")
@@ -273,6 +201,7 @@ class WSI2Biopsy():
         """Function to create and save binary mask for Exclude regions. Each mask
         is saved as exclude.png in its subfolder of WSI_name.
         """
+        if self.verbose: print("\tGenerating exclude...")
         exclude = self.create_binary_mask(biopsy_path, "Special", "Exclude")
         exclude = Image.fromarray(exclude)
         exclude.save(os.path.join(*[biopsy_path, "exclude.png"]), "PNG")
@@ -328,8 +257,7 @@ class WSI2Biopsy():
         # Add ones everywhere in background class to ensure label is given
         final_mask[:, :, 0] = np.ones_like(final_mask[:, :, 0])
 
-        if self.verbose:
-            print(f"\t\t\tNumber of pixels with conflicting labels: {len(np.argwhere(np.count_nonzero(final_mask, axis=-1) > 2))}")
+        if self.verbose: print(f"\t\tNumber of pixels with conflicting labels: {len(np.argwhere(np.count_nonzero(final_mask, axis=-1) > 2))}")
 
         # Return max_label minus reversed argmax to ensure highest label has priority
         return (max_label - 1 - np.argmax(final_mask[:, :, ::-1], axis=-1)).astype(np.uint8)
@@ -347,16 +275,34 @@ class WSI2Biopsy():
     =                                                                               =
     =================================================================================
     """
-    def magnification2level(self, magnification):
-        """Function to get level from specified magnifications
 
-        Parameters:
-        magnification (int): Zoom level to use in TIFF file
+    def get_biopsy_dict(self):
+        """Function to create folders for biopsy. Also collects biopsy boundaries from XML file and stores them
+        in a dictionary
 
         Returns:
-        level (int): Level to extract in TIFF file to get correct zoom
+        biopsy_dict (dict): Dictionary with biopsy_path as key and dictionary as value with top_left, bottom_right
+        location (in level 0) and sizes (calculated for self.level and on level 0) for every biopsy
         """
-        return MAGN2LEVEL[magnification]
+        biopsy_dict = {}
+
+        for biopsy in self.get_elements_in_group("Biopsy-Outlines"):
+            biopsy_path = self.create_biopsy_dir(biopsy)
+            biopsy_coords = self.get_coords(biopsy)
+
+            # Location = top_left: (x, y) tuple giving the top left pixel in the level 0 reference frame
+            top_left = np.amin(biopsy_coords, axis=0)
+            bottom_right = np.amax(biopsy_coords, axis=0)
+
+            # Size: (width, height) tuple giving the region size
+            size_out = tuple(((bottom_right - top_left) / 2 ** self.level).astype(int))
+            size_l0 = tuple(bottom_right - top_left)
+
+            biopsy_dict[biopsy_path] = {'top_left' : top_left,
+                                        'bottom_right' : bottom_right, 
+                                        'size_out' : size_out,
+                                        'size_l0' : size_l0}
+        return biopsy_dict
 
     def create_biopsy_dir(self, biopsy):
         """Function to create subfolder for a biopsy in TIFF file using XML element
@@ -383,47 +329,6 @@ class WSI2Biopsy():
         All "Annotation" elements that are part of specified group
         """
         return self.XML.findall(f".//Annotation/.[@PartOfGroup='{group}']")
-
-    def load_biopsy(self, biopsy_path):
-        return Image.open(os.path.join(*[biopsy_path, "biopsy.png"]))
-
-    def load_mask(self, biopsy_path, ann_level='tissue'):
-        if ann_level == 'tissue':
-            mask_filename = 'mask.png'
-        elif ann_level == 'glandular':
-            mask_filename = 'g_level_mask.png'
-
-        return Image.open(os.path.join(*[biopsy_path, mask_filename]))
-
-    def load_exclude(self, biopsy_path):
-        return Image.open(os.path.join(*[biopsy_path, "exclude.png"]))
-
-    def plot_biopsy(self, biopsy_path):
-        biopsy = self.load_biopsy(biopsy_path)
-        g_level_mask = self.load_mask(biopsy_path, 'glandular')
-        mask = self.load_mask(biopsy_path, 'tissue')
-
-        _, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(24, 16))
-        ax1.set_title('Biopsy')
-        ax1.imshow(biopsy)
-
-        ax2.set_title('Glandular-level Mask')
-        ax2.imshow(g_level_mask, interpolation='none')
-
-        ax3.set_title('Tissue-level Mask')
-        mask_imshow = ax3.imshow(mask, interpolation='none')
-
-        # From: https://stackoverflow.com/questions/25482876/how-to-add-legend-to-imshow-in-matplotlib
-        values = np.unique(mask)
-        # get the colors of the values, according to the 
-        # colormap used by imshow
-        colors = [ mask_imshow.cmap(mask_imshow.norm(value)) for value in values]
-        # create a patch (proxy artist) for every color 
-        patches = [ mpatches.Patch(color=colors[i], label=LABEL2ANN[value]) for i, value in enumerate(values) ]
-        # put those patched as legend-handles into the legend
-        plt.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
-        plt.savefig(os.path.join(*[biopsy_path, "example_plot.png"]), format='png')
-        plt.close()
 
     """
     =================================================================================
@@ -464,6 +369,7 @@ class WSI2Biopsy():
         for ann_level, annotation_classes in annotation_classes_dict.items():
             polygons[ann_level] = {annotation_class : [self.get_coords(polygon_group) for polygon_group in self.get_elements_in_group(annotation_class)] 
                                                                         for annotation_class in annotation_classes}
+        if self.verbose: polygons2str(polygons, self.WSI_name, self.dataset)
         return polygons
         
     def polygon_in_boundaries(self, polygon, top_left, bottom_right):
@@ -506,30 +412,35 @@ if __name__ == "__main__":
                         help='If True, black out Exclude regions in biopsy.png and mask.png')    
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='If True, print statements during parsing')
-    parser.add_argument('--save_fig', action='store_true', default=False,
-                        help='If True, save figure of Biopsy, G and T level mask')    
+    parser.add_argument('--show_fig', action='store_true', default=False,
+                        help='Show biopsy and mask side by side after extraction')
 
     config = parser.parse_args()
-    print(config.datasets)
 
-    if config.verbose: print(f"Extracting datasets at {config.magnification}x magnification from {config.root_dir} as root directory and saving in {config.out_dir}")
+    if config.verbose: 
+        print(f"Extracting datasets at {config.magnification}x magnification from {config.root_dir} as root directory and saving in {config.out_dir}")
+        print(f"Datasets: {config.datasets}")
+        print(f"Annotation_classes_dict: {config.annotation_classes_dict}\n")
 
     for dataset in config.datasets:
         WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(config.root_dir, dataset)) if file.endswith(".tiff")]
-        if config.verbose: print(f"========= EXTRACTING DATASET {dataset} ============")
+        if config.verbose: print(f"=================== EXTRACTING DATASET {dataset} =====================\n")
         for WSI_name in WSI_names:
-            _ = WSI2Biopsy(config.root_dir, 
+            biopsy = WSI2Biopsy(config.root_dir, 
                             dataset, 
                             WSI_name, 
                             config.out_dir, 
                             annotation_classes_dict=config.annotation_classes_dict, 
                             magnification=config.magnification, 
                             extract_stroma=config.extract_stroma, 
-                            verbose=config.verbose, 
-                            save_fig=config.save_fig)
+                            verbose=config.verbose)
+
+            if config.show_fig:
+                for biopsy_path in biopsy.biopsy_dict.keys():
+                    plot_biopsy(biopsy_path)
 
 # %%
-# out_dir = "../Barrett20x"
+# out_dir = "Barrett20x"
 # root_dir = "TIFFs"
 
 # magnification = 20
@@ -540,7 +451,7 @@ if __name__ == "__main__":
 
 # annotation_classes_dict=ANNOTATION_CLASSES_DICT
 # print(annotation_classes_dict)
-# datasets = ["RBE_Nieuw"] #, "ASL", "LANS-Tissue"]
+# datasets = ["Bolero", "LANS", "RBE", "RBE_Nieuw"] #, "ASL", "LANS-Tissue"]
 
 # if verbose:
 #     print(f"Extracting datasets at {magnification}x magnification from {root_dir} as root directory and saving in {out_dir}")
@@ -549,6 +460,8 @@ if __name__ == "__main__":
 #     WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(root_dir, dataset)) if file.endswith(".tiff")]
 #     print(f"========= EXTRACTING DATASET {dataset} ============")
 #     for WSI_name in WSI_names:
+#         if WSI_name == "RBET18-02665_HE-I_BIG":
+#             continue
 #         _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, annotation_classes_dict=annotation_classes_dict, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
 
 # print("Using T-level annotations")
@@ -566,3 +479,5 @@ if __name__ == "__main__":
 #         if WSI_name == "RBET18-02665_HE-I_BIG":
 #             continue
 #         _ = WSI2Biopsy(root_dir, dataset, WSI_name, out_dir, annotation_classes_dict=annotation_classes_dict, magnification=20, extract_stroma=extract_stroma, verbose=verbose, save_fig=save_fig)
+
+# %%
