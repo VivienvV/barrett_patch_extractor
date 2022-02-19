@@ -131,3 +131,4 @@ dmypy.json
 # Custom ignores
 /TIFFs/*
 /Barrett20x/*
+/Barrett20x_Patched

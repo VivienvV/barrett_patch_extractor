@@ -16,7 +16,8 @@ from skimage import exposure
 import xml.etree.ElementTree as ET
 import openslide
 
-from utils import open_PIL_file, plot_biopsy, magnification2level, polygons2str
+from utils.utils import magnification2level, polygons2str
+from utils.plotting import plot_biopsy
 
 # %%
 # DEFAULT MAPPINGS
@@ -42,9 +43,8 @@ ANN2LABEL = {"Biopsy-Outlines"  : 0,
 class WSI2Biopsy():
     def __init__(self, 
                 root_dir, 
-                dataset, 
-                WSI_name,
                 out_dir,
+                WSI_name,
                 annotation_classes_dict=ANNOTATION_CLASSES_DICT,
                 label_map=ANN2LABEL,
                 magnification=20,
@@ -54,10 +54,9 @@ class WSI2Biopsy():
         """Function to extract N biopsies and masks from TIFF file with its corresponding XML file with annotations. 
 
         Parameters:
-        root_dir (str): String with path to root directory of datasets.
-        dataset (str): String with dataset name to extract files from.
-        WSI_name (str): String with path to tiff and xml files containing N biopsies for one WSI.
+        root_dir (str): String with path to root directory containing WSI directories.
         out_dir (str): String with path to save biopsies and masks.
+        WSI_name (str): String with path to folder of tiff and xml files containing N biopsies for one WSI.
         annotation_classes_dict (dict): Dictionary of annotation groups based level of annotation to extract in XML files.
         label_map (dict): Dictionary with label corresponding to annotation group.
         magnification (int): Integer at which magnification to the biopsies. Options are: [40, 20, 10, 5, ...].
@@ -65,10 +64,6 @@ class WSI2Biopsy():
         mask_exclude (bool): If set to True, regions annotated with Exclude will be masked in the resulting images.
         verbose (bool): If set to True, prints with progress updates will be made.
         """
-
-        self.out_dir = out_dir
-        self.dataset = dataset
-        self.WSI_name = WSI_name
 
         self.annotation_classes_dict = annotation_classes_dict
         self.label_map = label_map
@@ -79,12 +74,13 @@ class WSI2Biopsy():
         self.verbose = verbose
 
         # Create output dir with all needed subfolders
-        self.biopsy_out_dir = os.path.join(*[out_dir, dataset, WSI_name])
-        Path(self.biopsy_out_dir).mkdir(parents=True, exist_ok=True)
+        self.out_dir = out_dir
+        self.WSI_name = WSI_name
+        Path(os.path.join(*[out_dir, WSI_name])).mkdir(parents=True, exist_ok=True)
 
         # Open TIFF and XML files
-        self.TIFF = openslide.OpenSlide(os.path.join(*[root_dir, dataset, WSI_name]) + '.tiff')
-        self.XML = ET.parse(os.path.join(*[root_dir, dataset, WSI_name]) +'.xml').getroot()
+        self.TIFF = openslide.OpenSlide(os.path.join(*[root_dir, WSI_name]) + '.tiff')
+        self.XML = ET.parse(os.path.join(*[root_dir, WSI_name]) +'.xml').getroot()
         
         # Create dictionaries for polygons (values) for each class (key)
         self.polygons = self.get_polygons(annotation_classes_dict)            
@@ -96,9 +92,9 @@ class WSI2Biopsy():
         for biopsy_path in self.biopsy_dict.keys():
             if self.verbose: print(f"Extracting biopsy {biopsy_path}")
 
-            self.generate_biopsy(biopsy_path)
-            self.generate_mask(biopsy_path)
-            self.generate_exclude(biopsy_path)
+            self.extract_biopsy(biopsy_path)
+            self.extract_mask(biopsy_path)
+            self.extract_exclude(biopsy_path)
 
             if mask_exclude:
                 self._mask_exclude(biopsy_path)
@@ -108,12 +104,12 @@ class WSI2Biopsy():
     """
     =================================================================================
     =                                                                               =
-    =                           GENERATION OF PNGs                                  =
+    =                           EXTRACTION OF PNGs                                  =
     =                                                                               =
     =================================================================================
     """
 
-    def generate_biopsy(self, biopsy_path):
+    def extract_biopsy(self, biopsy_path):
         """Function to extract and save one biopsy from self.biopsy_dict at certain zoom level. Each biopsy
         is saved as biopsy.png in its subfolder of WSI_name.
         """
@@ -157,7 +153,7 @@ class WSI2Biopsy():
         
         return np.logical_or(tissue_w_holes, holes)
 
-    def generate_mask(self, biopsy_path):
+    def extract_mask(self, biopsy_path):
         """Function to create and save 8bit mask for annotation regions. Each mask
         is saved as mask.png in its subfolder of WSI_name.
 
@@ -165,7 +161,7 @@ class WSI2Biopsy():
         biopsy_path (str): Path to subfolder of WSI_name corresponding to biopsy.
         label_map (dict): Dictionary which maps each annotation class to a label.
         """
-        if self.verbose: print("\tGenerating mask...")
+        if self.verbose: print("\tExtracting mask...")
         binary_masks = {ann_level : {} for ann_level in self.annotation_classes_dict.keys()}
         # E-Stroma mask is created to substract regions inbetween glandular structures.
         binary_masks['Special']['E-Stroma'] = self.create_binary_mask(biopsy_path, 'Special', 'E-Stroma')
@@ -197,11 +193,11 @@ class WSI2Biopsy():
         final_mask.save(os.path.join(*[biopsy_path, "mask.png"]), "PNG")
         final_mask.close()
 
-    def generate_exclude(self, biopsy_path):
+    def extract_exclude(self, biopsy_path):
         """Function to create and save binary mask for Exclude regions. Each mask
         is saved as exclude.png in its subfolder of WSI_name.
         """
-        if self.verbose: print("\tGenerating exclude...")
+        if self.verbose: print("\tExtracting exclude...")
         exclude = self.create_binary_mask(biopsy_path, "Special", "Exclude")
         exclude = Image.fromarray(exclude)
         exclude.save(os.path.join(*[biopsy_path, "exclude.png"]), "PNG")
@@ -315,7 +311,7 @@ class WSI2Biopsy():
         """
         index = biopsy.attrib["Name"].rfind(" ")
         roi_id = int(biopsy.attrib["Name"][index:])
-        biopsy_path = os.path.join(*[self.biopsy_out_dir, f"{self.WSI_name}-{roi_id}"])
+        biopsy_path = os.path.join(*[self.out_dir, self.WSI_name, f"{self.WSI_name}-{roi_id}"])
         Path(biopsy_path).mkdir(parents=True, exist_ok=True)
         return biopsy_path
 
@@ -369,7 +365,7 @@ class WSI2Biopsy():
         for ann_level, annotation_classes in annotation_classes_dict.items():
             polygons[ann_level] = {annotation_class : [self.get_coords(polygon_group) for polygon_group in self.get_elements_in_group(annotation_class)] 
                                                                         for annotation_class in annotation_classes}
-        if self.verbose: polygons2str(polygons, self.WSI_name, self.dataset)
+        if self.verbose: polygons2str(polygons, self.WSI_name)
         return polygons
         
     def polygon_in_boundaries(self, polygon, top_left, bottom_right):
@@ -388,7 +384,7 @@ class WSI2Biopsy():
 
 # %%
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Configuration of parameters for WSI2Biopsy processing.")
     # Directories
     parser.add_argument('--root_dir', type=str, default='TIFFs',
                         help='Path to dataset with WSI')
@@ -423,13 +419,18 @@ if __name__ == "__main__":
         print(f"Annotation_classes_dict: {config.annotation_classes_dict}\n")
 
     for dataset in config.datasets:
-        WSI_names = [file.split(".")[0] for file in os.listdir(os.path.join(config.root_dir, dataset)) if file.endswith(".tiff")]
-        if config.verbose: print(f"=================== EXTRACTING DATASET {dataset} =====================\n")
+        dataset_root_dir = os.path.join(config.root_dir, dataset)
+        dataset_out_dir = os.path.join(config.out_dir, dataset)
+        
+        WSI_names = [file.split(".")[0] for file in os.listdir(dataset_root_dir) if file.endswith(".tiff")]
+        if config.verbose: print(f"=================== EXTRACTING DATASET {dataset} ===================\n")
+
         for WSI_name in WSI_names:
-            biopsy = WSI2Biopsy(config.root_dir, 
-                            dataset, 
+            if WSI_name == "RBET18-02665_HE-I_BIG":
+                continue
+            biopsy = WSI2Biopsy(dataset_root_dir,
+                            dataset_out_dir, 
                             WSI_name, 
-                            config.out_dir, 
                             annotation_classes_dict=config.annotation_classes_dict, 
                             magnification=config.magnification, 
                             extract_stroma=config.extract_stroma, 
