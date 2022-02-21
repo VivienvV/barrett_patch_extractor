@@ -2,6 +2,7 @@ import os
 
 from PIL import Image
 import numpy as np
+import pandas as pd
 
 MAGN2LEVEL = {  40  : 0,
                 20  : 1,
@@ -60,3 +61,49 @@ def polygons2str(polygons, WSI_name):
         for ann_group, polys in ann_groups.items():
             print(f"\t\tFor {ann_group} found {len(polys)} annotations.")
     print("")
+
+def create_dataframes(root_dir, datasets):
+    database_frame_biopsy_tuples = []
+    database_frame_patches_tuples = []
+    for dataset in datasets:
+        for WSI_name in os.listdir(os.path.join(root_dir, dataset)):
+            for biopsy in os.listdir(os.path.join(*[root_dir, dataset, WSI_name])):
+                database_frame_biopsy_tuples.append((dataset, WSI_name, biopsy))
+                database_frame_patches_tuples.append((dataset, WSI_name, biopsy, 0))
+
+    label_to_collect_biopsy = ['height', 'width', 'Background', 'Stroma', 'Squamous', 'NDBE', 'LGD', 'HGD', 'center_label', 'dominant_label', 'highest_label']
+    df_biopsy = pd.DataFrame(
+        -1,
+        pd.MultiIndex.from_tuples(
+            database_frame_biopsy_tuples,
+            names=['Dataset', 'WSI_name', 'Biopsy']
+        ),
+        label_to_collect_biopsy,
+        dtype=int
+    )
+
+    label_to_collect_patches = ['x', 'y', 'Background', 'Stroma', 'Squamous', 'NDBE', 'LGD', 'HGD', 'center_label', 'dominant_label', 'highest_label']
+    df_patches = pd.DataFrame(
+        -1,
+        pd.MultiIndex.from_tuples(
+            database_frame_patches_tuples,
+            names=['Dataset', 'WSI_name', 'Biopsy', 'Patch_idx']
+        ),
+        label_to_collect_patches,
+        dtype=int
+    )
+    return df_biopsy, df_patches
+
+
+def save_dataframes(out_dir, df_biopsy, df_patches, verbose=False):
+    df_biopsy = df_biopsy.astype(int)
+    df_biopsy.sort_index(0, level=['Dataset', 'WSI_name', 'Biopsy'], ascending=True, inplace=True)
+    df_biopsy.to_csv(os.path.join(*[out_dir, 'labels_biopsy_level.cvs']))
+
+    df_patches = df_patches.astype(int)
+    df_patches.sort_index(0, level=['Dataset', 'WSI_name', 'Biopsy', 'Patch_idx'], ascending=True, inplace=True)
+    df_patches.to_csv(os.path.join(*[out_dir, 'labels_patches_level.cvs']))
+
+    if verbose:
+        print("\nLabels at biopsy level:\n", df_biopsy)
+        print("\nLabels at patch level\n", df_patches)

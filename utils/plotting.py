@@ -61,6 +61,7 @@ def make_gif(file_name, img_full, img_patches, accepted_patches, xy_list, patch_
             writer.append_data(np.array(frame))
             plt.close()
             frame.close()
+        writer.close()
 
 def plot_patch(img_full, patch, xy, patch_size, accepted=False):
     h, w = patch_size
