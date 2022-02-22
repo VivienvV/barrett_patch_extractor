@@ -52,9 +52,11 @@ def plot_biopsy(biopsy_path, save_fig=False, show_fig=True):
     if save_fig: plt.savefig(os.path.join(*[biopsy_path, "biopsy_mask_exclude_fig.png"]), format='png')
     plt.show() if show_fig else plt.close()
 
-def make_gif(file_name, img_full, img_patches, accepted_patches, xy_list, patch_size):
+def make_gif(file_name, img_full, img_patches, accepted_patches, xy_list, patch_size, only_accepted=False):
     with imageio.get_writer(file_name, 'GIF', fps=3) as writer:
         for patch, accepted, xy in tqdm(zip(img_patches, accepted_patches, xy_list), total=len(xy_list)):
+            if only_accepted and not accepted:
+                continue
             frame = plot_patch(img_full, patch, xy, patch_size, accepted)
             frame.canvas.draw()
             frame = Image.frombytes('RGB', frame.canvas.get_width_height(), frame.canvas.tostring_rgb())
