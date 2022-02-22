@@ -29,7 +29,7 @@ LABEL2ANN = {0  : "Background",
             5   : "HGD"
             }
 
-LABEL2ANN = {"Background" : 0,
+ANN2LABEL = {"Background" : 0,
             "Stroma" : 1,
             "Squamous" : 2,
             "NDBE" : 3,
