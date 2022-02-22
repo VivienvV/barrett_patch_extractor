@@ -30,9 +30,9 @@ class Biopsy2Patches():
         self.out_dir = out_dir
 
         self.biopsy_out_dir = os.path.join(*[out_dir, 'biopsy_patches'])
-        if save_patches: Path(self.biopsy_out_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.biopsy_out_dir).mkdir(parents=True, exist_ok=True)
         self.mask_out_dir = os.path.join(*[out_dir, 'mask_patches'])
-        if save_patches: Path(self.mask_out_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.mask_out_dir).mkdir(parents=True, exist_ok=True)
 
         self.patch_size = patch_size
         self.stride = stride
@@ -141,7 +141,7 @@ def extract_patches(config):
                 if config.verbose: print(f"\tExtracting patches from {biopsy} of WSI {WSI_name}...")
                 biopsy_root_dir = os.path.join(*[config.root_dir, dataset, WSI_name, biopsy])
                 biopsy_out_dir = os.path.join(*[config.out_dir, dataset, WSI_name, biopsy])
-
+                
                 B2P = Biopsy2Patches(biopsy_root_dir, biopsy_out_dir, config.patch_size, config.stride, config.threshold, save_patches=config.save_patches, save_gif=config.save_gif)
                 if config.verbose: print(f'\t\tExtracted {len(B2P.label_dict_patches.keys())} patches of the {len(B2P.patches_xy)}')
 
@@ -204,6 +204,7 @@ if __name__ == "__main__":
     Path(config.out_dir).mkdir(parents=True, exist_ok=True)
 
     extract_patches(config)
+
     if config.dataset_probing:
         dataset_probing(config.out_dir)
 
