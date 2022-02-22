@@ -75,10 +75,7 @@ class Biopsy2Patches():
             make_gif(os.path.join(*[self.out_dir, 'patches_from_biopsy.gif']), self.biopsy, biopsy_patches, accepted_patches, self.patches_xy, self.patch_size)
 
     def is_valid_patch(self, mask_patches, threshold):
-        print(mask_patches.shape)
         ones = torch.sum((mask_patches == 1), dim=(1, 2))
-        print(ones.shape, ones)
-        print(torch.count_nonzero(mask_patches, dim=(1, 2)))
         nonzero_excl_one = torch.count_nonzero(mask_patches, dim=(1, 2)) - ones
 
         print(nonzero_excl_one.shape, nonzero_excl_one)
