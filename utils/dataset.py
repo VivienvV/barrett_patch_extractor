@@ -27,7 +27,6 @@ class BarrettDataset(Dataset):
             self.patches_frame = self.patches_frame.loc[slice(None), slice(None), sample(list(self.patches_frame.index.unique('Biopsy')), k=N_biopsies), slice(None)].sort_index(axis=0, level=['Dataset', 'WSI_name', 'Biopsy'], ascending=True)
 
     def __getitem__(self, index):
-        print(index)
         labels = self.patches_frame.iloc[index][self.labels_list]
         patch_path = list(labels.name)
 
@@ -49,8 +48,8 @@ class BarrettDataset(Dataset):
         return len(self.patches_frame)
 
     def __repr__(self):
-        return f"BarrettDataset object with number of\nDatasets : {self.N_datasets()}\
-            \n\tWSIs : {self.N_wsi_names()}\n\t\tBiopsies{self.N_biopsies()}\n\t\t\tPatches : {self.N_patches()}"
+        return f"BarrettDataset object with number of\nDatasets: {self.N_datasets()}\
+            \n\tWSIs: {self.N_wsi_names()}\n\t\tBiopsies: {self.N_biopsies()}\n\t\t\tPatches: {self.N_patches()}"
 
     def patch_size(self):
         return self._patch_size
@@ -91,10 +90,8 @@ if __name__ == "__main__":
 
     root_dir = f'{out_dir}_patched_ps{patch_size[0]}_{patch_size[1]}_str{stride[0]}_{stride[1]}_thr{str(threshold).replace(".", "")}'
 
-
-    N_biopsies=4
-    # labels_list=['x', 'Background']
     labels_list = []
+    N_biopsies=None
 
     
     transforms_dict = {'biopsy' : transforms.Compose([
@@ -108,8 +105,8 @@ if __name__ == "__main__":
 
     barrett_data = BarrettDataset(root_dir=root_dir, labels_list=labels_list, transforms_=transforms_, N_biopsies=N_biopsies, biopsy_patches_only=False)
     print(barrett_data)
-    loader = DataLoader(barrett_data, 16, True)
+    # loader = DataLoader(barrett_data, 16, True)
 
-    for i, patch in enumerate(loader):
-        print([(k, v.shape) for k, v in patch.items()])
+    # for i, patch in enumerate(loader):
+    #     print([(k, v.shape) for k, v in patch.items()])
 

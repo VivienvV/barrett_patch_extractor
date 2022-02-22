@@ -11,7 +11,8 @@ from PIL import Image
 Image.MAX_IMAGE_PIXELS = None
 
 from utils.utils import open_PIL_file, save_PIL_file, create_dataframes, save_dataframes
-from utils.plotting import make_gif
+from utils.plotting import make_gif, dataset_probing
+from utils.dataset import BarrettDataset
 
 DATASETS = ["Bolero", "LANS", "RBE", "RBE_Nieuw", "ASL"] #, "LANS-Tissue"]
 # %%
@@ -74,8 +75,8 @@ class Biopsy2Patches():
             print("\tCreating gif files...")
             print("\t\tFor masks...")
             make_gif(os.path.join(*[self.out_dir, 'patches_from_mask.gif']), self.mask, mask_patches, accepted_patches, self.patches_xy, self.patch_size, only_accepted=True)
-            print("\t\tFor biopsy...")
-            make_gif(os.path.join(*[self.out_dir, 'patches_from_biopsy.gif']), self.biopsy, biopsy_patches, accepted_patches, self.patches_xy, self.patch_size, only_accepted=True)
+            # print("\t\tFor biopsy...")
+            # make_gif(os.path.join(*[self.out_dir, 'patches_from_biopsy.gif']), self.biopsy, biopsy_patches, accepted_patches, self.patches_xy, self.patch_size, only_accepted=True)
 
     def is_valid_patch(self, mask_patches, threshold):
         ones = torch.sum((mask_patches == 1), dim=(1, 2))
@@ -120,23 +121,13 @@ class Biopsy2Patches():
         save_PIL_file(mask, self.mask_out_dir, file_name, mode='L')
 
 def extract_patches(config):
-    stride = tuple((int(config.stride[0]), int(config.stride[1])))
-    patch_size = tuple((int(config.patch_size[0]), int(config.patch_size[1])))
-    
-    save_patches = False if config.dont_save_patches else True
-
-    if config.out_dir is None:
-        config.out_dir = f'{config.root_dir}_patched_ps{patch_size[0]}_{patch_size[1]}_str{stride[0]}_{stride[1]}_thr{str(config.threshold).replace(".", "")}'
-
-    Path(config.out_dir).mkdir(parents=True, exist_ok=True)
-
     if config.verbose:
-        print(f"Saving patches: {save_patches}")
+        print(f"Saving patches: {config.save_patches}")
         print(f"Extracting patches from {config.root_dir} as root directory and saving in {config.out_dir}")
 
         print(f"Datasets: {config.datasets}")
-        print(f"Patch size: {patch_size}")
-        print(f"Stride: {stride}")
+        print(f"Patch size: {config.patch_size}")
+        print(f"Stride: {config.stride}")
         print(f"Threshold: {config.threshold}")
 
         print(f"Extracting GIFs of extracted masks and biopsy: {config.save_gif}\n")
@@ -151,7 +142,7 @@ def extract_patches(config):
                 biopsy_root_dir = os.path.join(*[config.root_dir, dataset, WSI_name, biopsy])
                 biopsy_out_dir = os.path.join(*[config.out_dir, dataset, WSI_name, biopsy])
 
-                B2P = Biopsy2Patches(biopsy_root_dir, biopsy_out_dir, patch_size, stride, config.threshold, save_patches=save_patches, save_gif=config.save_gif)
+                B2P = Biopsy2Patches(biopsy_root_dir, biopsy_out_dir, config.patch_size, config.stride, config.threshold, save_patches=config.save_patches, save_gif=config.save_gif)
                 if config.verbose: print(f'\t\tExtracted {len(B2P.label_dict_patches.keys())} patches of the {len(B2P.patches_xy)}')
 
                 df_biopsy.loc[(dataset, WSI_name, biopsy), :] = list(B2P.label_dict_biopsy.values())
@@ -159,8 +150,8 @@ def extract_patches(config):
                     df_patches.loc[(dataset, WSI_name, biopsy, str(idx)+'.png'), :] = list(patch_dict.values())
 
     meta_data = {'root_dir' : config.root_dir,
-                'patch_size' : patch_size,
-                'stride' : stride,
+                'patch_size' : config.patch_size,
+                'stride' : config.stride,
                 'threshold' : config.threshold,
                 'accepted_rate' : len(B2P.label_dict_patches.keys()) / len(B2P.patches_xy)
                 }
@@ -195,9 +186,28 @@ if __name__ == "__main__":
                         help='Flag to not save patches for faster (re)construction of csv files.')
     parser.add_argument('--save_gif', action='store_true', default=False,
                         help='Create and save gif for every biopsy and mask')
+    parser.add_argument('--dataset_probing', action='store_true', default=False,
+                        help='Create and save plots for dataset')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='If True, print statements during parsing')
 
     config = parser.parse_args()
 
+    config.stride = tuple((int(config.stride[0]), int(config.stride[1])))
+    config.patch_size = tuple((int(config.patch_size[0]), int(config.patch_size[1])))
+    
+    config.save_patches = False if config.dont_save_patches else True
+
+    if config.out_dir is None:
+        config.out_dir = f'{config.root_dir}_patched_ps{config.patch_size[0]}_{config.patch_size[1]}_str{config.stride[0]}_{config.stride[1]}_thr{str(config.threshold).replace(".", "")}'
+
+    Path(config.out_dir).mkdir(parents=True, exist_ok=True)
+
     extract_patches(config)
+    if config.dataset_probing:
+        dataset_probing(config.out_dir)
+
+    if config.verbose:
+        print(BarrettDataset(config.out_dir))
+
+

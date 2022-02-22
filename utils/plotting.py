@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 from utils.utils import open_PIL_file
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import colors, patches
 from PIL import Image
@@ -11,7 +13,8 @@ from tqdm import tqdm
 
 # make a color map of fixed colors
 LISTEDCOLORMAPS = {'blues' : ['ghostwhite', '#d4f0fc', '#89d6fb', '#02a9f7', '#02577a', '#01303f'],
-                    'contrasts' : ['ghostwhite', '#0a9ad7', 'orchid', '#9ad70a', '#ffcc06', '#ff3f3f']
+                    'contrasts' : ['ghostwhite', '#0a9ad7', 'orchid', '#9ad70a', '#ffcc06', '#ff3f3f'],
+                    'contrasts_dark_bg' : ['darkgray', '#0a9ad7', 'orchid', '#9ad70a', '#ffcc06', '#ff3f3f']
                 }
 
 DEFAULT_CMAP = colors.ListedColormap(LISTEDCOLORMAPS['contrasts'])
@@ -24,6 +27,14 @@ LABEL2ANN = {0  : "Background",
             3   : "NDBE",
             4   : "LGD",
             5   : "HGD"
+            }
+
+LABEL2ANN = {"Background" : 0,
+            "Stroma" : 1,
+            "Squamous" : 2,
+            "NDBE" : 3,
+            "LGD" : 4,
+            "HGD" : 5
             }
 
 """
@@ -96,3 +107,35 @@ def create_legend(imshow):
     # put those patched as legend-handles into the legend
     plt.legend(handles=handles, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
     # return patches
+
+"""
+=========================================================
+=                                                       =
+=                   DATASET PROBING                     =
+=                                                       =
+=========================================================
+"""
+
+def dataset_probing(data_frame_path):
+    save_dir = os.path.join(data_frame_path, 'data_probing')
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+
+    data_frame = pd.read_csv(os.path.join(data_frame_path, 'labels_patches_level.csv'), index_col=['Dataset', 'WSI_name', 'Biopsy', 'Patch_idx'])
+    norm_data_frame = data_frame.groupby('Dataset')[['Background', 'Stroma', 'Squamous', 'NDBE', 'LGD', 'HGD']].apply(lambda x: x / (224 * 224))
+    mean_dataset = norm_data_frame.groupby('Dataset').mean()
+    std_dataset = norm_data_frame.groupby('Dataset').std()
+
+    mean_dataset.plot(kind='bar', cmap=colors.ListedColormap(LISTEDCOLORMAPS['contrasts_dark_bg']))
+    plt.savefig(os.path.join(save_dir, 'mean_dataset.png'))
+    plt.close()
+
+    std_dataset.plot(kind='bar', cmap=colors.ListedColormap(LISTEDCOLORMAPS['contrasts_dark_bg']))
+    plt.savefig(os.path.join(save_dir, 'std_dataset.png'))
+    plt.close()
+
+    for label in ['center_label', 'dominant_label', 'highest_label']:
+        foobar = data_frame.groupby('Dataset')[label].value_counts().unstack(fill_value=int(0))
+        foobar.plot(kind='bar', cmap=colors.ListedColormap(LISTEDCOLORMAPS['contrasts_dark_bg']), title=label)
+        plt.savefig(os.path.join(save_dir, f'{label}_dataset.png'))
+        plt.close()
+
