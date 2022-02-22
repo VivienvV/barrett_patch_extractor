@@ -78,7 +78,6 @@ class Biopsy2Patches():
         ones = torch.sum((mask_patches == 1), dim=(1, 2))
         nonzero_excl_one = torch.count_nonzero(mask_patches, dim=(1, 2)) - ones
 
-        print(nonzero_excl_one.shape, nonzero_excl_one)
         return nonzero_excl_one / (self.patch_size[0] * self.patch_size[1]) > threshold
 
     def get_N_rows_cols(self):
