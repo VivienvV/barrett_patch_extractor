@@ -210,21 +210,21 @@ if __name__ == "__main__":
     config.patch_size = tuple((int(config.patch_size[0]), int(config.patch_size[1])))
     config.save_patches = False if config.dont_save_patches else True
 
-    if config.verbose:
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] %(message)s",
-            handlers=[
-                logging.FileHandler("logs/biopsy2patches.log"),
-                logging.StreamHandler()
-            ]
-        )
 
     if config.out_dir is None:
         config.out_dir = f'{config.root_dir}_patched_ps{config.patch_size[0]}_{config.patch_size[1]}_str{config.stride[0]}_{config.stride[1]}_thr{str(config.threshold).replace(".", "")}'
 
     Path(config.out_dir).mkdir(parents=True, exist_ok=True)
 
+    if config.verbose:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            handlers=[
+                logging.FileHandler(os.path.join(config.out_dir, "biopsy2patches.log")),
+                logging.StreamHandler()
+            ]
+        )
     extract_patches(config)
 
     if config.dataset_probing:
