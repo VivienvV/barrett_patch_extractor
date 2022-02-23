@@ -1,1 +1,0 @@
-# barrett_patch_extractor

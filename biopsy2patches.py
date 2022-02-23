@@ -26,7 +26,21 @@ class Biopsy2Patches():
                  threshold=0.15,
                  save_patches=True,
                  save_gif=False):
+        """Function to extract patches from single biopsy given the parameters.
 
+        Parameters:
+        root_dir (str): Root directory of biopsy containing biopsy.png, mask.png and exclude.png
+        out_dir (str): Directory to store patches in.
+        patch_size (tuple): Tuple for size of extracted patches. Resulting patches will have size of (H x W).
+        stride (tuple): Tuple for stride of extracting patches in both vertical and horizontal direction (V_stride, H_stride).
+        threshold (float): Patches with an area of Squamous, NDBE, LGD and HGD together larger than threshold are saved.
+        save_patches (bool): If True, patches of biopsy and mask are save in biopsy_patches and mask_patches.
+        save_gif (bool): If True, a gif of all selected patches highlighted will be made for biopsy and mask
+
+        Returns:
+        Saves patches of biopsy and mask in out_dir in folders biopsy_patches and mask_patches respectfully. Also creates dictionaries
+        for patch level and biopsy level labels.        
+        """
         self.root_dir = root_dir
         self.out_dir = out_dir
 
