@@ -363,7 +363,7 @@ class WSI2Biopsy():
         polygons = {}
 
         for ann_level, annotation_classes in annotation_classes_dict.items():
-            polygons[ann_level] = {annotation_class : [self.get_coords(polygon_group) for polygon_group in self.get_elements_in_group(annotation_class)] 
+            polygons[ann_level] = {annotation_class : [self.get_coords(polygon_group) if len(self.get_coords(polygon_group)) > 2 else print("polygon with only 2") for polygon_group in self.get_elements_in_group(annotation_class)] 
                                                                         for annotation_class in annotation_classes}
         if self.verbose: polygons2str(polygons, self.WSI_name)
         return polygons
