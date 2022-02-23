@@ -1,5 +1,6 @@
 # %%
 import os
+import logging
 import warnings
 import re
 from pathlib import Path
@@ -90,7 +91,7 @@ class WSI2Biopsy():
 
         # Create for every biopsy a biopsy.png, exclude.png and mask.png
         for biopsy_path in self.biopsy_dict.keys():
-            if self.verbose: print(f"Extracting biopsy {biopsy_path}")
+            if self.verbose: logging.info(f"Extracting biopsy {biopsy_path}")
 
             self.extract_biopsy(biopsy_path)
             self.extract_mask(biopsy_path)
@@ -99,7 +100,7 @@ class WSI2Biopsy():
             if mask_exclude:
                 self._mask_exclude(biopsy_path)
 
-            if self.verbose: print()
+            if self.verbose: logging.info('')
 
     """
     =================================================================================
@@ -113,7 +114,7 @@ class WSI2Biopsy():
         """Function to extract and save one biopsy from self.biopsy_dict at certain zoom level. Each biopsy
         is saved as biopsy.png in its subfolder of WSI_name.
         """
-        if self.verbose: print("\tGenerating biopsy...")
+        if self.verbose: logging.info("\tGenerating biopsy...")
         location, size_out = tuple(self.biopsy_dict[biopsy_path]['top_left']), self.biopsy_dict[biopsy_path]['size_out']
 
         biopsy_img = self.TIFF.read_region(location, self.level, size_out)
@@ -161,7 +162,7 @@ class WSI2Biopsy():
         biopsy_path (str): Path to subfolder of WSI_name corresponding to biopsy.
         label_map (dict): Dictionary which maps each annotation class to a label.
         """
-        if self.verbose: print("\tExtracting mask...")
+        if self.verbose: logging.info("\tExtracting mask...")
         binary_masks = {ann_level : {} for ann_level in self.annotation_classes_dict.keys()}
         # E-Stroma mask is created to substract regions inbetween glandular structures.
         binary_masks['Special']['E-Stroma'] = self.create_binary_mask(biopsy_path, 'Special', 'E-Stroma')
@@ -197,7 +198,7 @@ class WSI2Biopsy():
         """Function to create and save binary mask for Exclude regions. Each mask
         is saved as exclude.png in its subfolder of WSI_name.
         """
-        if self.verbose: print("\tExtracting exclude...")
+        if self.verbose: logging.info("\tExtracting exclude...")
         exclude = self.create_binary_mask(biopsy_path, "Special", "Exclude")
         exclude = Image.fromarray(exclude)
         exclude.save(os.path.join(*[biopsy_path, "exclude.png"]), "PNG")
@@ -253,7 +254,7 @@ class WSI2Biopsy():
         # Add ones everywhere in background class to ensure label is given
         final_mask[:, :, 0] = np.ones_like(final_mask[:, :, 0])
 
-        if self.verbose: print(f"\t\tNumber of pixels with conflicting labels: {len(np.argwhere(np.count_nonzero(final_mask, axis=-1) > 2))}")
+        if self.verbose: logging.info(f"\t\tNumber of pixels with conflicting labels: {len(np.argwhere(np.count_nonzero(final_mask, axis=-1) > 2))}")
 
         # Return max_label minus reversed argmax to ensure highest label has priority
         return (max_label - 1 - np.argmax(final_mask[:, :, ::-1], axis=-1)).astype(np.uint8)
@@ -347,7 +348,7 @@ class WSI2Biopsy():
                                     for coordinates in element.iter('Coordinate')])
 
         if len(coords) < 3:
-            warnings.warn("Warning: Found polygon group with less than 3 elements")
+            logging.warning("Warning: Found polygon group with less than 3 elements")
         return coords
     
     def get_polygons(self, annotation_classes_dict):
@@ -384,21 +385,26 @@ class WSI2Biopsy():
 
 def extract_biopsies(config):
     if config.verbose: 
-        print(f"Extracting datasets at {config.magnification}x magnification from {config.root_dir} as root directory and saving in {config.out_dir}")
-        print(f"Datasets: {config.datasets}")
-        print(f"Extract Stroma: {config.extract_stroma}")
-        print(f"Masking Exclude: {config.mask_exclude}")
-        print(f"Showing extracted biopsy: {config.save_fig}")
-        print(f"Annotation_classes_dict: {config.annotation_classes_dict}\n")
+        logging.info(f"Extracting datasets at {config.magnification}x magnification from {config.root_dir} as root directory and saving in {config.out_dir}")
+        logging.info(f"Datasets: {config.datasets}")
+        logging.info(f"Extract Stroma: {config.extract_stroma}")
+        logging.info(f"Masking Exclude: {config.mask_exclude}")
+        logging.info(f"Showing extracted biopsy: {config.save_fig}")
+        logging.info(f"Annotation_classes_dict: {config.annotation_classes_dict}\n")
 
     for dataset in config.datasets:
         dataset_root_dir = os.path.join(config.root_dir, dataset)
         dataset_out_dir = os.path.join(config.out_dir, dataset)
         
         WSI_names = [file.split(".")[0] for file in os.listdir(dataset_root_dir) if file.endswith(".tiff")]
-        if config.verbose: print(f"=================== EXTRACTING DATASET {dataset} ===================\n")
+        if config.verbose: logging.info(f"=================== EXTRACTING DATASET {dataset} ===================\n")
+
+        all_dataset_files = os.listdir(dataset_root_dir)
 
         for WSI_name in WSI_names:
+            if WSI_name + '.tiff' not in all_dataset_files or WSI_name + '.xml' not in all_dataset_files:
+                if config.verbose: logging.warning(f"FOUND NO TIFF OR XML FILE FOR {WSI_name}")
+                continue
             biopsy = WSI2Biopsy(dataset_root_dir,
                             dataset_out_dir, 
                             WSI_name, 
@@ -443,7 +449,16 @@ if __name__ == "__main__":
                         help='Save biopsy and mask side by side after extraction')
 
     config = parser.parse_args()
+    if config.verbose:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            handlers=[
+                logging.FileHandler("logs/wsi2biopsy.log"),
+                logging.StreamHandler()
+            ]
+        )
 
     finished = extract_biopsies(config)
     if finished:
-        print(f"\nSuccesfully extracted all datasets into {config.out_dir}")
+        logging.info(f"\nSuccesfully extracted all datasets into {config.out_dir}")

@@ -4,7 +4,7 @@ import json
 from random import sample, seed
 
 import pandas as pd
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from PIL import Image
 # import cv2
 
@@ -104,9 +104,5 @@ if __name__ == "__main__":
     transforms_=Transforms_Dict(transforms_dict)
 
     barrett_data = BarrettDataset(root_dir=root_dir, labels_list=labels_list, transforms_=transforms_, N_biopsies=N_biopsies, biopsy_patches_only=False)
-    print(barrett_data)
-    # loader = DataLoader(barrett_data, 16, True)
 
-    # for i, patch in enumerate(loader):
-    #     print([(k, v.shape) for k, v in patch.items()])
 

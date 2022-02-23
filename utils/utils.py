@@ -1,4 +1,5 @@
 import os
+import logging
 
 from PIL import Image
 import numpy as np
@@ -56,12 +57,12 @@ def magnification2level(magnification, magnification2level=MAGN2LEVEL):
     return magnification2level[magnification]
 
 def polygons2str(polygons, WSI_name):
-    print(f"Annotation polygons found for {WSI_name}:")
+    logging.info(f"Annotation polygons found for {WSI_name}:")
     for ann_level, ann_groups in polygons.items():
-        print(f"\t{ann_level} annotations in WSI:")
+        logging.info(f"\t{ann_level} annotations in WSI:")
         for ann_group, polys in ann_groups.items():
-            print(f"\t\tFor {ann_group} found {len(polys)} annotations.")
-    print("")
+            logging.info(f"\t\tFor {ann_group} found {len(polys)} annotations.")
+    logging.info("")
 
 def create_dataframes(root_dir, datasets):
     database_frame_biopsy_tuples = []
@@ -110,6 +111,6 @@ def save_dataframes(out_dir, df_biopsy, df_patches, meta_data, verbose):
         json.dump(meta_data, fp)
 
     if verbose:
-        print("\nLabels at biopsy level:\n", df_biopsy)
-        print("\nLabels at patch level\n", df_patches)
-        print("\nMeta data stored: \n", meta_data)
+        logging.info("\nLabels at biopsy level:\n", df_biopsy)
+        logging.info("\nLabels at patch level\n", df_patches)
+        logging.info("\nMeta data stored: \n", meta_data)

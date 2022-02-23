@@ -1,5 +1,6 @@
 # %%
 import os
+import logging
 from pathlib import Path
 import itertools
 import argparse
@@ -12,7 +13,7 @@ Image.MAX_IMAGE_PIXELS = None
 
 from utils.utils import open_PIL_file, save_PIL_file, create_dataframes, save_dataframes
 from utils.plotting import make_gif, dataset_probing
-from utils.dataset import BarrettDataset
+from dataset import BarrettDataset
 
 DATASETS = ["Bolero", "LANS", "RBE", "RBE_Nieuw", "ASL"] #, "LANS-Tissue"]
 # %%
@@ -72,11 +73,11 @@ class Biopsy2Patches():
                 self.patch_idx += 1
  
         if self.save_gif:
-            print("\tCreating gif files...")
-            print("\t\tFor masks...")
+            logging.info("\tCreating gif files...")
+            logging.info("\t\tFor masks...")
             make_gif(os.path.join(*[self.out_dir, 'patches_from_mask.gif']), self.mask, mask_patches, accepted_patches, self.patches_xy, self.patch_size, only_accepted=True)
-            # print("\t\tFor biopsy...")
-            # make_gif(os.path.join(*[self.out_dir, 'patches_from_biopsy.gif']), self.biopsy, biopsy_patches, accepted_patches, self.patches_xy, self.patch_size, only_accepted=True)
+            logging.info("\t\tFor biopsy...")
+            make_gif(os.path.join(*[self.out_dir, 'patches_from_biopsy.gif']), self.biopsy, biopsy_patches, accepted_patches, self.patches_xy, self.patch_size, only_accepted=True)
 
     def is_valid_patch(self, mask_patches, threshold):
         ones = torch.sum((mask_patches == 1), dim=(1, 2))
@@ -122,28 +123,26 @@ class Biopsy2Patches():
 
 def extract_patches(config):
     if config.verbose:
-        print(f"Saving patches: {config.save_patches}")
-        print(f"Extracting patches from {config.root_dir} as root directory and saving in {config.out_dir}")
-
-        print(f"Datasets: {config.datasets}")
-        print(f"Patch size: {config.patch_size}")
-        print(f"Stride: {config.stride}")
-        print(f"Threshold: {config.threshold}")
-
-        print(f"Extracting GIFs of extracted masks and biopsy: {config.save_gif}\n")
+        logging.info(f"Saving patches: {config.save_patches}")
+        logging.info(f"Extracting patches from {config.root_dir} as root directory and saving in {config.out_dir}")
+        logging.info(f"Datasets: {config.datasets}")
+        logging.info(f"Patch size: {config.patch_size}")
+        logging.info(f"Stride: {config.stride}")
+        logging.info(f"Threshold: {config.threshold}")
+        logging.info(f"Extracting GIFs of extracted masks and biopsy: {config.save_gif}\n")
 
     df_biopsy, df_patches = create_dataframes(config.root_dir, config.datasets)
 
     for dataset in config.datasets:
-        if config.verbose: print(f"=================== EXTRACTING DATASET {dataset} ===================")
+        if config.verbose: logging.info(f"=================== EXTRACTING DATASET {dataset} ===================")
         for WSI_name in os.listdir(os.path.join(config.root_dir, dataset)):
             for biopsy in os.listdir(os.path.join(*[config.root_dir, dataset, WSI_name])):
-                if config.verbose: print(f"\tExtracting patches from {biopsy} of WSI {WSI_name}...")
+                if config.verbose: logging.info(f"\tExtracting patches from {biopsy} of WSI {WSI_name}...")
                 biopsy_root_dir = os.path.join(*[config.root_dir, dataset, WSI_name, biopsy])
                 biopsy_out_dir = os.path.join(*[config.out_dir, dataset, WSI_name, biopsy])
                 
                 B2P = Biopsy2Patches(biopsy_root_dir, biopsy_out_dir, config.patch_size, config.stride, config.threshold, save_patches=config.save_patches, save_gif=config.save_gif)
-                if config.verbose: print(f'\t\tExtracted {len(B2P.label_dict_patches.keys())} patches of the {len(B2P.patches_xy)}')
+                if config.verbose: logging.info(f'\t\tExtracted {len(B2P.label_dict_patches.keys())} patches of the {len(B2P.patches_xy)}')
 
                 df_biopsy.loc[(dataset, WSI_name, biopsy), :] = list(B2P.label_dict_biopsy.values())
                 for idx, patch_dict in B2P.label_dict_patches.items():
@@ -195,8 +194,17 @@ if __name__ == "__main__":
 
     config.stride = tuple((int(config.stride[0]), int(config.stride[1])))
     config.patch_size = tuple((int(config.patch_size[0]), int(config.patch_size[1])))
-    
     config.save_patches = False if config.dont_save_patches else True
+
+    if config.verbose:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            handlers=[
+                logging.FileHandler("logs/biopsy2patches.log"),
+                logging.StreamHandler()
+            ]
+        )
 
     if config.out_dir is None:
         config.out_dir = f'{config.root_dir}_patched_ps{config.patch_size[0]}_{config.patch_size[1]}_str{config.stride[0]}_{config.stride[1]}_thr{str(config.threshold).replace(".", "")}'
@@ -209,6 +217,6 @@ if __name__ == "__main__":
         dataset_probing(config.out_dir)
 
     if config.verbose:
-        print(BarrettDataset(config.out_dir))
+        logging.info(BarrettDataset(config.out_dir))
 
 
