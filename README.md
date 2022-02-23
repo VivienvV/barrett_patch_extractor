@@ -7,6 +7,7 @@ The pipeline to create patches from whole slide images can be split up into part
 ### Step 1: WSI --> Biopsies
 The first step is to extract biopsies from the tiff files and convert the xml annotations to masks. Inputs are the TIFF file with its corresponding XML file containing annotations for the N biopsies. Output for each of these files is N biopsies and masks.
 
+```
 class WSI2Biopsies(root_dir,
                     dataset,
                     WSI_name,
@@ -18,28 +19,30 @@ class WSI2Biopsies(root_dir,
                     mask_exclude=False,
                     verbose=True,
                     save_fig=False):
-"""Function to extract N biopsies and masks from TIFF file with its corresponding XML file with annotations.
+	"""Function to extract N biopsies and masks from TIFF file with its corresponding XML file with annotations.
 
-Parameters:
-            root_dir (str): String with path to root directory of datasets.
-            dataset (str): String with dataset name to extract files from.
-            WSI_name (str): String with path to tiff and xml files containing N biopsies for one WSI.
-            out_dir (str): String with path to save biopsies and masks.
-            annotation_classes_dict (dict): Dictionary of annotation groups based level of annotation to extract in XML files.
-            label_map (dict): Dictionary with label corresponding to annotation group.
-            magnification (int): Integer at which magnification to the biopsies. Options are: [40, 20, 10, 5, ...].
-            extract_stroma (bool): If set to True, stroma regions will be separated from background regions and be combined with E-Stroma class. If set to False, stroma and background regions will be combined into one label.
-            mask_exclude (bool): If set to True, regions annotated with Exclude will be masked in the resulting images.
-            verbose (bool): If set to True, prints with progress updates will be made.
+	Parameters:
+	root_dir (str): String with path to root directory of datasets.
+	dataset (str): String with dataset name to extract files from.
+	WSI_name (str): String with path to tiff and xml files containing N biopsies for one WSI.
+	out_dir (str): String with path to save biopsies and masks.
+	annotation_classes_dict (dict): Dictionary of annotation groups based level of annotation to extract in XML files.
+	label_map (dict): Dictionary with label corresponding to annotation group.
+	magnification (int): Integer at which magnification to the biopsies. Options are: [40, 20, 10, 5, ...].
+	extract_stroma (bool): If set to True, stroma regions will be separated from background regions and be combined with E-Stroma class. If set to False, stroma and background regions will be combined into one label.
+	mask_exclude (bool): If set to True, regions annotated with Exclude will be masked in the resulting images.
+	verbose (bool): If set to True, prints with progress updates will be made.
 
-Returns:
-biopsies (list): List of N biopsies
-masks (list): List of N masks
-"""
+	Returns:
+	biopsies (list): List of N biopsies
+	masks (list): List of N masks
+	"""
+```
 
 ### Step 2: Biopsies → Patches
 The second step is to convert all biopsies and their corresponding masks into smaller patches. 
 
+```
 class Biopsy2Patches(root_dir,
                      out_dir,
                      patch_size=(224, 224),
@@ -47,22 +50,23 @@ class Biopsy2Patches(root_dir,
                      threshold=0.15,
                      save_patches=True,
                      save_gif=False):
-"""Function to extract patches from single biopsy given the parameters.
+	"""Function to extract patches from single biopsy given the parameters.
 
-            Parameters:
-            root_dir (str): Root directory of biopsy containing biopsy.png, mask.png and exclude.png
-            out_dir (str): Directory to store patches in.
-            patch_size (tuple): Tuple for size of extracted patches. Resulting patches will have size of (H x W).
-            stride (tuple): Tuple for stride of extracting patches in both vertical and horizontal direction (V_stride, H_stride).
-            threshold (float): Patches with an area of Squamous, NDBE, LGD and HGD together larger than threshold are saved.
-            save_patches (bool): If True, patches of biopsy and mask are save in biopsy_patches and mask_patches.
-            save_gif (bool): If True, a gif of all selected patches highlighted will be made for biopsy and mask
+	Parameters:
+	root_dir (str): Root directory of biopsy containing biopsy.png, mask.png and exclude.png
+	out_dir (str): Directory to store patches in.
+	patch_size (tuple): Tuple for size of extracted patches. Resulting patches will have size of (H x W).
+	stride (tuple): Tuple for stride of extracting patches in both vertical and horizontal direction (V_stride, H_stride).
+	threshold (float): Patches with an area of Squamous, NDBE, LGD and HGD together larger than threshold are saved.
+	save_patches (bool): If True, patches of biopsy and mask are save in biopsy_patches and mask_patches.
+	save_gif (bool): If True, a gif of all selected patches highlighted will be made for biopsy and mask
 
 
-            Returns:
-            Saves patches of biopsy and mask in out_dir in folders biopsy_patches and mask_patches respectfully. Also creates dictionaries
-            for patch level and biopsy level labels.            
-            """
+	Returns:
+	Saves patches of biopsy and mask in out_dir in folders biopsy_patches and mask_patches respectfully. Also creates dictionaries
+	for patch level and biopsy level labels.            
+	"""
+```
 
 ### Step 3: Creating dataset files/splits
 To be done…
