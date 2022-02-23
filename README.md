@@ -132,13 +132,11 @@ Some of these annotations can be turned directly into labels but others need to 
 
 The table below shows the definitions of labels from annotations. Background and stroma are seen as one labeled class but could also be interpreted as two different labels. 
 
-
-Label_id 	Label_name     Corresp. Ann.                             Remarks
-   0        Background     Biopsy-Outlines + No Tissue               Background and Stroma can be separate or combined classes. Argument for splitting: One has 
-                                                                     tissue and other does not. Combining them could lead to confusion if the sampled patch contains only stroma in real world application.
-                                                                     Argument against splitting: Stroma is diagnostically not really relevant. By splitting them, labels will get cluttered and training resources will be devoted to less relevant labels 
+```
+	Label_id 	Label_name     Corresp. Ann.                             Remarks
+   	0        	Background     Biopsy-Outlines + No Tissue               Background and Stroma can be separate or combined classes. Argument for splitting: One has tissue and other does not. Combining them could lead to confusion if the sampled patch contains only stroma in real world application. Argument against splitting: Stroma is diagnostically not really relevant. By splitting them, labels will get cluttered and training resources will be devoted to less relevant labels 
 	
-   1        Stroma         E-Stroma or Biopsy-Outlines + Tissue
+   	1        Stroma         E-Stroma or Biopsy-Outlines + Tissue
 
 	2        Squamous       Squamous-T
 	
@@ -148,6 +146,7 @@ Label_id 	Label_name     Corresp. Ann.                             Remarks
 
 	5     	HGD         	HGD-G or HGD-T                            Combine Glandular/Tissue level annotations into one if Tissue level enabled.
 	-1       Exclude     	Exclude                                	Excluded areas do not really contain a label. A separate mask can be created which can be either applied or not on patches.
+```
 
 Besides creating masks used for segmentation tasks, some other special labels can be collected and stored. These labels can be used for different down-stream tasks and can be over on different levels besides patch level. Some of these labels are:
 * Center pixel label of Patch
@@ -158,10 +157,11 @@ Besides creating masks used for segmentation tasks, some other special labels ca
 ## Magnification
 TIFFs have several zoom levels stored within them. Zoom level 0 is ‘40x’, which is 0.25 mu/pixel (4 pixels per mu). Below is a table with zoom levels and their corresponding scales.
 
-
-Level       	Zoom     	mu/pixels   	pixels/mu
+```
+	Level       	Zoom     	mu/pixels   	pixels/mu
 	0        	40x         	0.25        	4        	
-   1        	20x         	0.5         	2
-	2        	10x         	1              1
-	3        	5x             2              0.5
+   	1        	20x         	0.5         	2
+	2        	10x         	1              	1
+	3        	5x             	2              0.5
 	etc…
+```
