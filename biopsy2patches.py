@@ -72,7 +72,12 @@ class Biopsy2Patches():
         height, width = self.patch_size
         vertical_stride, horizontal_stride = self.stride
 
-        mask_patches = torch.from_numpy(self.mask).unfold(0, height, vertical_stride).unfold(1, width, horizontal_stride)
+        try:
+            mask_patches = torch.from_numpy(self.mask).unfold(0, height, vertical_stride).unfold(1, width, horizontal_stride)
+        except RuntimeError:
+            logging.warning("\tFOUND INVALID PATCH")
+            return
+        
         mask_patches = mask_patches.contiguous().view(self.N_patches, height, width)
 
         biopsy_patches = torch.from_numpy(self.biopsy).unfold(0, height, vertical_stride).unfold(1, width, horizontal_stride)
