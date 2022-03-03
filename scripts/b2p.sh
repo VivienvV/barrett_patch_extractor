@@ -1,0 +1,1 @@
+python biopsy2patches.py --root_dir '../../../data/ml/AMC-data/Barrett/Barrett20x' --patch_size 224 224 --stride 149 149 --threshold 0.5 --verbose --datasets 'ASL' 'Bolero' 'LANS' 'RBE' 'RBE_Nieuw' --dataset_probing
