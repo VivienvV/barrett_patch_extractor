@@ -1,7 +1,6 @@
 # %%
 import os
 import logging
-import warnings
 import re
 from pathlib import Path
 import argparse

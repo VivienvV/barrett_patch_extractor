@@ -1,0 +1,1 @@
+python wsi2biopsy.py --root_dir '../../../data/archief/AMC-data/Barrett' --out_dir '../../../data/ml/AMC-data/Barrett/Barrett20x' --magnification 20 --extract_stroma --verbose --datasets "ASL" "Bolero"

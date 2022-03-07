@@ -15,7 +15,7 @@ from utils.utils import open_PIL_file, save_PIL_file, create_dataframes, save_da
 from utils.plotting import make_gif, dataset_probing
 from dataset import BarrettDataset
 
-DATASETS = ["Bolero", "LANS", "RBE", "RBE_Nieuw", "ASL"] #, "LANS-Tissue"]
+DATASETS = ["ASL", "Bolero", "LANS", "RBE", "RBE_Nieuw"] #, "LANS-Tissue"]
 # %%
 class Biopsy2Patches():
     def __init__(self, 
