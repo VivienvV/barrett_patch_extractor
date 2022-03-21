@@ -1,8 +1,3 @@
-"""The pyraug's Datasets inherit from
-:class:`torch.utils.data.Dataset` and must be used to convert the data before
-training. As of today, it only contains the :class:`pyraug.data.BaseDatset` useful to train a
-VAE model but other Datatsets will be added as models are added.
-"""
 import os
 import numpy  as np
 from PIL import Image
@@ -79,6 +74,7 @@ class BarrettLabeledDataset(Dataset):
         return len(self.patches[biopsy])
 
 
+
 # MAIN CODE
 transforms_ = {'biopsy_patches' : transforms.Compose([
     transforms.ToTensor(),
@@ -96,10 +92,11 @@ def get_class_distribution(dataset_obj):
         count_dict[y_lbl] += 1  
     return count_dict
 
-# TODO: store results of get_class_distribution in .txt file, 
-# load from text file instead of recomputing if file exists. 
-counts = get_class_distribution(training_data)
-class_count = [i for i in counts.values()]
+if not os.path.isfile('class_counts.txt'):
+    counts = get_class_distribution(training_data)
+    json.dump(counts, open('class_counts.txt','w'))
+
+class_count = [i for i in json.load(open('class_counts.txt')).values()]
 
 class_weights = 1./torch.tensor(class_count, dtype=torch.float) 
 y_train = np.array([sample[1] for sample in training_data])
@@ -109,3 +106,5 @@ final_weights = torch.from_numpy(samples_weight)
 # WEIGHTED DATALOADER OBJECT
 sampler = WeightedRandomSampler(final_weights.type('torch.DoubleTensor'), len(final_weights))
 training_loader = DataLoader(training_data, batch_size=12, sampler=sampler)
+
+test_loader = DataLoader(test_data, batch_size=50, shuffle=True, drop_last=False)
