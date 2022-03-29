@@ -21,7 +21,7 @@ from utils.plotting import plot_biopsy
 
 # %%
 # DEFAULT MAPPINGS
-DATASETS = ["ASL", "Bolero", "LANS", "RBE", "RBE_Nieuw"]#, "LANS-Tissue"]
+DATASETS = ["ASL", "Bolero", "LANS", "RBE"]#, "LANS-Tissue"]
 
 ANNOTATION_CLASSES_DICT = { "Special"  : ["Biopsy-Outlines", "E-Stroma", "Exclude"], 
                             "G-level"  : ["NDBE-G", "LGD-G", "HGD-G"],
