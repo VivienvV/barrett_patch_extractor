@@ -1,2 +1,4 @@
-python wsi2biopsy.py --root_dir '../../../data/archief/AMC-data/Barrett' --out_dir '../../../data/ml/AMC-data/Barrett/Barrett20x' --magnification 20 --extract_stroma --verbose
-python biopsy2patches.py --root_dir '../../../data/ml/AMC-data/Barrett/Barrett20x' --patch_size 224 224 --stride 149 149 --threshold 0.5 --verbose --dataset_probing
+python wsi2biopsy.py --root_dir '../../../data/archief/AMC-data/Barrett' --out_dir '../../../data/ml/AMC-data/Barrett/Barrett10x' --magnification 10 --extract_stroma --verbose
+python biopsy2patches.py --root_dir '../../../data/ml/AMC-data/Barrett/Barrett10x' --patch_size 224 224 --stride 149 149 --threshold 0.5 --verbose --dataset_probing
+python wsi2biopsy.py --root_dir '../../../data/archief/AMC-data/Barrett' --out_dir '../../../data/ml/AMC-data/Barrett/Barrett40x' --magnification 40 --extract_stroma --verbose
+python biopsy2patches.py --root_dir '../../../data/ml/AMC-data/Barrett/Barrett40x' --patch_size 224 224 --stride 149 149 --threshold 0.5 --verbose --dataset_probing

@@ -196,7 +196,7 @@ if __name__ == "__main__":
                         help='Tuple of desired patch size with dimensions HxW')
     parser.add_argument('--stride', nargs='+', default=(112, 112),
                         help='Tuple of desired stride for vertical and horizontal direction respectively')
-    parser.add_argument('--threshold', type=float, default=0.15,
+    parser.add_argument('--threshold', type=float, default=0.5,
                         help='Threshold for determining if patch is valid or not')
 
     # Extra flags
