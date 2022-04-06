@@ -394,6 +394,8 @@ def extract_biopsies(config):
     for dataset in config.datasets:
         dataset_root_dir = os.path.join(config.root_dir, dataset)
         dataset_out_dir = os.path.join(config.out_dir, dataset)
+
+        processed_WSI_names = os.listdir(dataset_out_dir)
         
         WSI_names = [file.split(".")[0] for file in os.listdir(dataset_root_dir) if file.endswith(".tiff")]
         if config.verbose: logging.info(f"=================== EXTRACTING DATASET {dataset} ===================\n")
@@ -403,6 +405,9 @@ def extract_biopsies(config):
         for WSI_name in WSI_names:
             if WSI_name + '.tiff' not in all_dataset_files or WSI_name + '.xml' not in all_dataset_files:
                 if config.verbose: logging.warning(f"FOUND NO TIFF OR XML FILE FOR {WSI_name}")
+                continue
+            if config.skip_processed and WSI_name in processed_WSI_names:
+                if config.verbose: logging.info(f"Skipping {WSI_name} because it already exists in {dataset_out_dir}")
                 continue
             biopsy = WSI2Biopsy(dataset_root_dir,
                             dataset_out_dir, 
@@ -444,6 +449,8 @@ if __name__ == "__main__":
                         help='If True, black out Exclude regions in biopsy.png and mask.png')    
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='If True, print statements during parsing')
+    parser.add_argument('--skip_processed', action='store_true', default=False,
+                        help='If True, do not parse already parsed WSIs again.')
     parser.add_argument('--save_fig', action='store_true', default=False,
                         help='Save biopsy and mask side by side after extraction')
 
