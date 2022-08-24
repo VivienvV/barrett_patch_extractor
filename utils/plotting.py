@@ -1,3 +1,4 @@
+from fileinput import filename
 import os
 from pathlib import Path
 from utils.utils import open_PIL_file
@@ -107,6 +108,19 @@ def create_legend(imshow):
     # put those patched as legend-handles into the legend
     plt.legend(handles=handles, bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0. )
     # return patches
+
+def save_color_mask_file(mask, color_mask_out_dir, file_name, show=False):
+    fig, ax = plt.subplots()
+    ax.imshow(mask, interpolation='none', cmap=DEFAULT_CMAP, norm=DEFAULT_NORM)
+    ax = plt.gca()
+    plt.axis('off')
+    plt.savefig(os.path.join(*[color_mask_out_dir, file_name]), format='png', bbox_inches='tight', pad_inches=0)
+    if show:
+        plt.show()
+    else:
+        plt.close()
+
+
 
 """
 =========================================================

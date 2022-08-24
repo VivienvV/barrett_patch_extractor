@@ -12,7 +12,7 @@ from PIL import Image
 Image.MAX_IMAGE_PIXELS = None
 
 from utils.utils import open_PIL_file, save_PIL_file, create_dataframes, save_dataframes
-from utils.plotting import make_gif, dataset_probing
+from utils.plotting import make_gif, dataset_probing, save_color_mask_file
 from dataset import BarrettDataset
 
 DATASETS = ["ASL", "Bolero", "LANS", "RBE"] #, "LANS-Tissue"]
@@ -25,7 +25,9 @@ class Biopsy2Patches():
                  stride=(224,224),
                  threshold=0.15,
                  save_patches=True,
-                 save_gif=False):
+                 save_gif=False,
+                 save_color_mask=False,
+                 save_denied_patches=False):
         """Function to extract patches from single biopsy given the parameters.
 
         Parameters:
@@ -49,14 +51,33 @@ class Biopsy2Patches():
         self.mask_out_dir = os.path.join(*[out_dir, 'mask_patches'])
         Path(self.mask_out_dir).mkdir(parents=True, exist_ok=True)
 
+        if save_denied_patches:
+            self.denied_biopsy_out_dir = os.path.join(*[out_dir, 'denied_biopsy_patches'])
+            Path(self.denied_biopsy_out_dir).mkdir(parents=True, exist_ok=True)
+            self.denied_mask_out_dir = os.path.join(*[out_dir, 'denied_mask_patches'])
+            Path(self.denied_mask_out_dir).mkdir(parents=True, exist_ok=True)
+            self.denied_patch_idx = 0
+
+        if save_color_mask:
+            self.color_mask_out_dir = os.path.join(*[out_dir, 'mask_patches', 'color'])
+            Path(self.color_mask_out_dir).mkdir(parents=True, exist_ok=True)
+
+            if save_denied_patches:
+                self.denied_color_mask_out_dir = os.path.join(*[out_dir, 'denied_mask_patches', 'color'])
+                Path(self.denied_color_mask_out_dir).mkdir(parents=True, exist_ok=True)
+
         self.patch_size = patch_size
         self.stride = stride
         self.threshold = threshold
         self.save_patches = save_patches
         self.save_gif = save_gif
+        self.save_color_mask = save_color_mask
+        self.save_denied_patches = save_denied_patches
 
         self.biopsy = open_PIL_file(root_dir, 'biopsy.png', mode='RGB', to_numpy=True)
         self.mask = open_PIL_file(root_dir, 'mask.png', mode='L', to_numpy=True)
+        if save_color_mask:
+            save_color_mask_file(self.mask, self.out_dir, 'color_mask.png')
 
         self.label_dict_biopsy = self.create_dict_entry(torch.from_numpy(self.mask), self.mask.shape, self.mask.shape)
         self.label_dict_patches = {}
@@ -90,7 +111,12 @@ class Biopsy2Patches():
                     self.save_patch(biopsy_patches[i], mask_patches[i], self.patches_xy[i])
                 self.label_dict_patches[self.patch_idx] = self.create_dict_entry(mask_patches[i], self.patches_xy[i], self.patch_size)
                 self.patch_idx += 1
- 
+
+            elif self.save_denied_patches:
+                if self.save_patches and torch.min(mask_patches[i]) > 0:
+                    self.save_patch(biopsy_patches[i], mask_patches[i], self.patches_xy[i], accepted=False)
+                self.denied_patch_idx += 1
+
         if self.save_gif:
             logging.info("\tCreating gif files...")
             logging.info("\t\tFor masks...")
@@ -134,11 +160,13 @@ class Biopsy2Patches():
 
         return patch_dict
 
-    def save_patch(self, biopsy, mask, xy):
-        file_name = f'{self.patch_idx}.png'
+    def save_patch(self, biopsy, mask, xy, accepted=True):
+        file_name = f'{self.patch_idx}.png' if accepted else f'{self.denied_patch_idx}.png'
         
-        save_PIL_file(biopsy, self.biopsy_out_dir, file_name, mode='RGB')
-        save_PIL_file(mask, self.mask_out_dir, file_name, mode='L')
+        save_PIL_file(biopsy, self.biopsy_out_dir, file_name, mode='RGB') if accepted else save_PIL_file(biopsy, self.denied_biopsy_out_dir, file_name, mode='RGB')
+        save_PIL_file(mask, self.mask_out_dir, file_name, mode='L') if accepted else save_PIL_file(mask, self.denied_mask_out_dir, file_name, mode='L')
+        if self.save_color_mask:
+            save_color_mask_file(mask, self.color_mask_out_dir, file_name) if accepted else save_color_mask_file(mask, self.denied_color_mask_out_dir, file_name)
 
 def extract_patches(config):
     if config.verbose:
@@ -160,7 +188,16 @@ def extract_patches(config):
                 biopsy_root_dir = os.path.join(*[config.root_dir, dataset, WSI_name, biopsy])
                 biopsy_out_dir = os.path.join(*[config.out_dir, dataset, WSI_name, biopsy])
                 
-                B2P = Biopsy2Patches(biopsy_root_dir, biopsy_out_dir, config.patch_size, config.stride, config.threshold, save_patches=config.save_patches, save_gif=config.save_gif)
+                B2P = Biopsy2Patches(biopsy_root_dir, 
+                                    biopsy_out_dir, 
+                                    config.patch_size, 
+                                    config.stride, 
+                                    config.threshold, 
+                                    save_patches=config.save_patches if biopsy == 'RB0004_HE-1' else False, 
+                                    save_gif=config.save_gif, 
+                                    save_color_mask=config.save_color_mask, 
+                                    save_denied_patches=config.save_denied_patches)
+
                 if config.verbose: logging.info(f'\t\tExtracted {len(B2P.label_dict_patches.keys())} patches of the {len(B2P.patches_xy)}')
 
                 df_biopsy.loc[(dataset, WSI_name, biopsy), :] = list(B2P.label_dict_biopsy.values())
@@ -194,7 +231,7 @@ if __name__ == "__main__":
                         help='Datasets to extract')
     parser.add_argument('--patch_size', nargs='+', default=(224, 224),
                         help='Tuple of desired patch size with dimensions HxW')
-    parser.add_argument('--stride', nargs='+', default=(112, 112),
+    parser.add_argument('--stride', nargs='+', default=(149, 149),
                         help='Tuple of desired stride for vertical and horizontal direction respectively')
     parser.add_argument('--threshold', type=float, default=0.5,
                         help='Threshold for determining if patch is valid or not')
@@ -202,8 +239,12 @@ if __name__ == "__main__":
     # Extra flags
     parser.add_argument('--dont_save_patches', action='store_true', default=False,
                         help='Flag to not save patches for faster (re)construction of csv files.')
+    parser.add_argument('--save_denied_patches', action='store_true', default=False,
+                        help='Flag to save denied patches patches as well in separate subfolder.')
     parser.add_argument('--save_gif', action='store_true', default=False,
                         help='Create and save gif for every biopsy and mask')
+    parser.add_argument('--save_color_mask', action='store_true', default=False,
+                        help='Create a plot for every mask with readable colors')
     parser.add_argument('--dataset_probing', action='store_true', default=False,
                         help='Create and save plots for dataset')
     parser.add_argument('--verbose', action='store_true', default=False,
