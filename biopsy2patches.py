@@ -193,7 +193,7 @@ def extract_patches(config):
                                     config.patch_size, 
                                     config.stride, 
                                     config.threshold, 
-                                    save_patches=config.save_patches if biopsy == 'RB0004_HE-1' else False, 
+                                    save_patches=config.save_patches, 
                                     save_gif=config.save_gif, 
                                     save_color_mask=config.save_color_mask, 
                                     save_denied_patches=config.save_denied_patches)
